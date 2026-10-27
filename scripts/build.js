@@ -10,7 +10,7 @@ scripts.forEach((code, i) => new vm.Script(code, { filename: `public/index.html 
 new vm.Script(await readFile(new URL("../public/sw.js", import.meta.url), "utf8"), { filename: "public/sw.js" });
 JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
 
-const routes = { "api/sync.js": ["POST"], "api/auth.js": ["GET", "POST", "PUT", "PATCH", "DELETE"] };
+const routes = { "api/sync.js": ["POST"], "api/auth.js": ["GET", "POST", "PUT", "PATCH", "DELETE"], "api/tokens.js": ["GET", "POST", "DELETE"], "api/mcp.js": ["POST", "GET", "DELETE"] };
 for (const [file, methods] of Object.entries(routes)) {
   const mod = await import(new URL("../" + file, import.meta.url));
   for (const m of methods) if (typeof mod[m] !== "function") throw new Error(`${file} does not export ${m}.`);

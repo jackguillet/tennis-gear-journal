@@ -30,6 +30,18 @@ npm run db:migrate      # optional: create the tables now (the API also does it 
 
 Under **Play on these strings**, pick the type of play (singles, doubles, hitting, lesson or drills, ball machine, serves), how long, and the day, then press **Log play**. The big number is the hours played since the racket's **Strung on** date, so it starts again from zero when you restring and change that date. Your level (NTRP) and style of play (heavy topspin, flat and so on) are under **Your game**, saved with your account.
 
+## Log play by chatting (Claude and other assistants)
+
+The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "I restrung the v8 today at 52 lb".
+
+1. In the app, under **Chat assistant**, press **Make a connector link** and copy it. It looks like `https://<your-app>.vercel.app/api/mcp/sbm_...` and is shown once.
+2. In Claude, open **Settings → Connectors → Add custom connector**, give it a name (for example Stringbed) and paste the link as the server URL. No other sign-in is needed.
+3. Ask away. The phone app picks up the change on its next sync.
+
+The link is a password for your tennis data: anyone with it can read and add to your rackets. Remove it in the app (×) to turn it off. Assistants that can send headers can call `https://<your-app>.vercel.app/api/mcp` with `Authorization: Bearer sbm_...` instead.
+
+Tools: `log_play`, `list_rackets`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the link was made.
+
 ## Put it on your iPhone
 
 1. Open the site in **Safari** and create an account (or sign in).
@@ -62,6 +74,8 @@ npm run build   # checks the page, service worker and API routes load
 | `public/sw.js` | Offline cache. Bump `VERSION` when you change a file in `public/`. |
 | `api/auth.js` | `/api/auth/*` forwards to Neon Auth (Better Auth endpoints such as `sign-up/email`, `sign-in/email`, `sign-out`, `get-session`), so session cookies stay on this site |
 | `api/sync.js` | `POST /api/sync {ops}`: applies the signed-in player's queued changes in one transaction and returns their rackets |
+| `api/mcp.js` | Remote MCP server for chat assistants (`/api/mcp/<link secret>`); tools in `lib/assistant.js` |
+| `api/tokens.js` | Make, list and remove connector links (signed-in player); only a hash of each secret is stored (`lib/tokens.js`) |
 | `lib/auth.js` | Neon Auth proxy and session check (`@neondatabase/auth/server`) |
 | `lib/db.js` | node-postgres pool, attached to Vercel Fluid compute |
 | `lib/store.js` | Validation and SQL for each change, all scoped to the player |
