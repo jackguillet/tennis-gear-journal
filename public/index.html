@@ -126,6 +126,10 @@ ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
 ol.hist button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
 .empty { color: var(--muted); font-size: 15px; }
 details summary { cursor: pointer; font-weight: 600; }
+.title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.signin-row { display: flex; gap: 10px; }
+.signin-row input { flex: 1; min-width: 0; }
+.err-text { color: var(--bad); }
 details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
 .confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -134,12 +138,23 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
 <body>
 <div class="wrap">
   <header>
-    <h1>Stringbed Meter</h1>
+    <div class="title-row"><h1>Stringbed Meter</h1><span class="chip" id="sync-chip" hidden></span></div>
     <div class="units" role="group" aria-label="Units">
       <button id="u-kg" type="button" aria-pressed="true">kg</button>
       <button id="u-lb" type="button" aria-pressed="false">lb</button>
     </div>
   </header>
+
+  <section class="card" id="signin" hidden aria-labelledby="h-signin">
+    <h2 id="h-signin">Sign in to sync</h2>
+    <p class="small">Enter your passcode to sync your rackets between devices. Until then, changes stay on this device.</p>
+    <form id="signin-form" class="signin-row">
+      <input id="signin-user" type="text" autocomplete="username" value="stringbed" hidden>
+      <input id="passcode" type="password" autocomplete="current-password" placeholder="Passcode" aria-label="Passcode" required>
+      <button class="btn primary" id="signin-go" type="submit">Sign in</button>
+    </form>
+    <p class="small err-text" id="signin-err" hidden></p>
+  </section>
 
   <div class="meter">
     <div class="racket-row">
@@ -212,9 +227,10 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
     </div>
     <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
-    <h2>Backup</h2>
-    <p class="small" id="store-note">Rackets and readings are saved on this iPhone. Back them up now and then, or before you delete the app.</p>
+    <h2>Sync and backup</h2>
+    <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
     <div class="row-btns">
+      <button class="btn" id="signout" type="button" hidden>Sign out</button>
       <button class="btn" id="export" type="button">Back up to a file</button>
       <label class="btn" for="import">Restore from a file<input id="import" type="file" accept="application/json,.json"></label>
     </div>
@@ -334,11 +350,118 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [] });
 
-  function localLoad() { try { return JSON.parse(localStorage.getItem("sbm-rackets") || "{}"); } catch { return {}; } }
-  function localSave() { try { localStorage.setItem("sbm-rackets", JSON.stringify(rackets)); } catch {} }
+  const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : newId() + Math.random().toString(36).slice(2, 10));
+  const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
+  const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
+  function localLoad() { return lsGet("sbm-rackets", {}); }
+  // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
+  // so the app works with no signal and catches up later.
+  let outbox = lsGet("sbm-outbox", []);
+  let needsSeed = lsGet("sbm-seed", false);
+  function localSave() { lsSet("sbm-rackets", rackets); lsSet("sbm-outbox", outbox); lsSet("sbm-seed", needsSeed); }
 
-  function persist() { localSave(); }
-  function removeStored() { localSave(); }
+  const racketData = r => ({
+    name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
+    weight: r.weight ?? null, stringName: r.stringName ?? null, strungKg: r.strungKg ?? null,
+    strungOn: r.strungOn ?? null, calib: r.calib || 1, calibAt: r.calibAt ?? null,
+  });
+  function queue(op) {
+    // A newer edit of the same racket replaces the queued one in place, so it still goes before that racket's readings.
+    const i = op.op === "racket.put" ? outbox.findIndex(o => o.op === "racket.put" && o.id === op.id) : -1;
+    if (i >= 0) outbox[i] = op; else outbox.push(op);
+    localSave(); syncSoon();
+  }
+  function persist(id) { const r = rackets[id]; if (r) queue({ op: "racket.put", id, data: racketData(r) }); }
+  function removeStored(id) { queue({ op: "racket.delete", id }); }
+  function addReading(id, x) {
+    const r = rackets[id]; x.id = x.id || uid(); r.readings.push(x);
+    persist(id); // makes sure the racket exists on the server before its reading
+    queue({ op: "reading.add", id: x.id, racketId: id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) });
+  }
+  function removeReading(id, x) {
+    const r = rackets[id]; r.readings = r.readings.filter(y => y !== x);
+    if (x.id) queue({ op: "reading.delete", id: x.id }); else localSave();
+  }
+  function applyLocal(op) {
+    if (op.op === "racket.put") rackets[op.id] = { ...op.data, readings: rackets[op.id] ? rackets[op.id].readings : [] };
+    else if (op.op === "racket.delete") delete rackets[op.id];
+    else if (op.op === "reading.add") { const r = rackets[op.racketId]; if (r && !r.readings.some(x => x.id === op.id)) r.readings.push({ id: op.id, t: op.t, hz: op.hz, ...(op.s ? { s: op.s } : {}) }); }
+    else if (op.op === "reading.delete") Object.values(rackets).forEach(r => { r.readings = r.readings.filter(x => x.id !== op.id); });
+  }
+
+  // ---------- sync ----------
+  let syncing = false, again = false, signedIn = null, online = navigator.onLine !== false, lastSync = lsGet("sbm-last-sync", 0), syncTimer = null, refused = null;
+  const canSync = () => location.protocol === "https:" || location.hostname === "localhost";
+  function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 800); }
+  async function sync() {
+    if (!canSync()) return;
+    if (syncing) { again = true; return; }
+    syncing = true;
+    // On a brand-new device, first look at what the server has before sending anything,
+    // so the starting rackets are only uploaded to an empty account.
+    const sent = needsSeed ? [] : outbox.slice(0, 400);
+    try {
+      const res = await fetch("api/sync", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops: sent }) });
+      online = true;
+      if (res.status === 401) { signedIn = false; return; }
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 400) {
+        // The server refused this batch. Keep a copy on the device and move on, so one bad change can't block syncing forever.
+        lsSet("sbm-refused", { at: Date.now(), error: body.error, ops: sent });
+        refused = body.error || "a change was refused";
+        outbox = outbox.filter(o => !sent.includes(o)); localSave(); again = true;
+        return;
+      }
+      if (!res.ok) throw new Error(body.error || "HTTP " + res.status);
+      signedIn = true;
+      outbox = outbox.filter(o => !sent.includes(o));
+      const server = body.rackets || {};
+      if (needsSeed && !Object.keys(server).length) {
+        // A brand-new account: upload the rackets this device started with.
+        needsSeed = false; Object.keys(rackets).forEach(persist); localSave(); again = true;
+        return;
+      }
+      needsSeed = false;
+      rackets = server;
+      outbox.forEach(applyLocal); // changes made while this request was out
+      if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
+      if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
+      lastSync = Date.now(); lsSet("sbm-last-sync", lastSync);
+      localSave();
+      if (outbox.length) again = true;
+      renderAfterSync();
+    } catch {
+      online = false;
+    } finally {
+      syncing = false; renderSync();
+      if (again) { again = false; syncSoon(); }
+    }
+  }
+  function renderAfterSync() {
+    // Don't overwrite a field the person is typing in.
+    const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
+    renderSelect(); if (!editing) renderSettings(); renderReadout(); renderHistory();
+  }
+  function ago(t) {
+    const m = Math.round((Date.now() - t) / 60000);
+    return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : new Date(t).toLocaleDateString();
+  }
+  function renderSync() {
+    const chip = $("sync-chip"), note = $("store-note"), n = outbox.length;
+    $("signin").hidden = signedIn !== false;
+    $("signout").hidden = signedIn !== true;
+    if (!canSync()) { chip.hidden = true; note.textContent = "Rackets and readings are saved on this device."; return; }
+    chip.hidden = false; chip.className = "chip";
+    if (signedIn === false) { chip.textContent = "Not synced"; chip.classList.add("warn"); note.textContent = "Not signed in. Changes stay on this device" + (n ? " (" + n + " waiting)" : "") + "."; }
+    else if (!online) { chip.textContent = n ? n + " waiting" : "Offline"; chip.classList.add("warn"); note.textContent = "Offline. " + (n ? n + " changes will sync when you're back online." : "Everything is saved on this device."); }
+    else if (n) { chip.textContent = "Syncing"; note.textContent = n + " changes syncing."; }
+    else { chip.textContent = "Synced"; chip.classList.add("good"); note.textContent = "Synced " + (lastSync ? ago(lastSync) : "") + ". Your rackets are the same on every device you sign in on."; }
+    if (refused) note.textContent += " The server refused one change (" + refused + "); a copy is kept on this device.";
+  }
+  addEventListener("online", () => { online = true; sync(); });
+  addEventListener("offline", () => { online = false; renderSync(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") sync(); });
+  setInterval(() => { if (outbox.length || Date.now() - lastSync > 5 * 60000) sync(); }, 60000);
 
   // ---------- rendering ----------
   const fmt = kg => unit === "kg" ? kg.toFixed(1) : (kg * LB).toFixed(1);
@@ -410,7 +533,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       if (base && x.t !== base.t) { const loss = (1 - kg / readingKg(base, r)) * 100; h.textContent = (loss >= 0 ? "−" : "+") + Math.abs(loss).toFixed(0) + "%"; }
       else h.textContent = x.hz.toFixed(0) + " Hz";
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this reading");
-      del.onclick = () => { r.readings = r.readings.filter(y => y !== x); persist(current); renderHistory(); };
+      del.onclick = () => { removeReading(current, x); renderHistory(); };
       li.append(t, k, h, del); list.appendChild(li);
     });
     drawTrend();
@@ -561,9 +684,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   $("save").onclick = () => {
     const r = R(); if (!r || !last || lastIsSample) return;
     if (r.example) { delete r.example; }
-    r.readings.push({ t: Date.now(), hz: +last.hz.toFixed(1), s: snap(r) });
-    if (r.readings.length > 300) r.readings.shift();
-    persist(current); renderSelect(); renderHistory();
+    addReading(current, { t: Date.now(), hz: +last.hz.toFixed(1), s: snap(r) });
+    renderSelect(); renderHistory();
     setStatus("Saved " + fmt(tensionKg(last.hz, r)) + " " + unit + " for " + r.name + ".");
     $("save").disabled = true;
   };
@@ -594,8 +716,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   $("del-yes").onclick = () => {
     $("del-confirm").hidden = true;
     delete rackets[current]; removeStored(current);
-    if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); persist(id); }
-    current = Object.keys(rackets)[0]; renderAll();
+    if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
+    current = Object.keys(rackets)[0]; localSave(); renderAll();
   };
   $("cal-go").onclick = () => {
     const r = R(); let v = parseFloat($("cal-val").value);
@@ -610,8 +732,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     r.calib = kg / modelKg(last.hz, r); r.calibAt = Date.now();
     r.strungKg = +kg.toFixed(2);
     if (!r.strungOn) r.strungOn = new Date().toLocaleDateString("en-CA");
-    r.readings.push({ t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
-    delete r.example; persist(current); renderAll();
+    addReading(current, { t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
+    renderAll();
     setStatus("Calibrated. This tap now reads " + fmt(kg) + " " + unit + " and is saved as the starting point for tension loss.");
   };
   $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
@@ -638,8 +760,10 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     };
   }
   let stored = localLoad();
-  if (!Object.keys(stored).length) { stored = defaults(); rackets = stored; localSave(); }
+  if (!Object.keys(stored).length && !outbox.length) { stored = defaults(); rackets = stored; needsSeed = true; localSave(); }
   boot(stored);
+  renderSync();
+  sync();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   // ---------- backup ----------
@@ -659,10 +783,32 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       const data = JSON.parse(await f.text());
       const list = data && data.rackets;
       if (!list || typeof list !== "object" || !Object.values(list).every(r => r && r.name && Array.isArray(r.readings))) throw 0;
-      rackets = list; localSave();
-      current = Object.keys(rackets)[0]; renderAll();
+      Object.keys(rackets).filter(id => !list[id]).forEach(id => { delete rackets[id]; removeStored(id); });
+      Object.entries(list).forEach(([id, r]) => {
+        const readings = r.readings || [];
+        rackets[id] = { ...r, readings: [] }; persist(id);
+        readings.forEach(x => { if (rackets[id].readings.some(y => y.id && y.id === x.id)) return; addReading(id, { id: x.id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }); });
+      });
+      current = Object.keys(rackets)[0]; localSave(); renderAll();
       setStatus("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
     } catch { setStatus("That file isn't a Stringbed backup.", true); }
+  };
+
+  // ---------- sign in ----------
+  $("signin-form").addEventListener("submit", async e => {
+    e.preventDefault();
+    const err = $("signin-err"); err.hidden = true; $("signin-go").disabled = true;
+    try {
+      const res = await fetch("api/login", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: $("passcode").value }) });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) { err.textContent = body.error || "Sign in didn't work. Try again."; err.hidden = false; return; }
+      $("passcode").value = ""; signedIn = true; renderSync(); sync();
+    } catch { err.textContent = "Can't reach the server. Check your connection and try again."; err.hidden = false; }
+    finally { $("signin-go").disabled = false; }
+  });
+  $("signout").onclick = async () => {
+    try { await fetch("api/login", { method: "DELETE", credentials: "same-origin" }); } catch {}
+    signedIn = false; renderSync();
   };
 
   // ---------- offline ----------
