@@ -3,19 +3,25 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Stringbed Meter: measure tennis string-bed tension from the sound of a tap, with history synced through Neon.",
+  "description": "Stringbed Meter: measure tennis string-bed tension from the sound of a tap. Accounts with Neon Auth, data in Neon Postgres, hosted on Vercel.",
   "engines": {
     "node": ">=20"
   },
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "db:migrate": "node scripts/migrate.js",
+    "dev": "node --env-file-if-exists=.env.local scripts/dev.js",
+    "build": "node scripts/build.js",
+    "db:migrate": "node --env-file-if-exists=.env.local scripts/migrate.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "@neondatabase/serverless": "^1.1.0"
+    "@neon/config": "^1.9.5",
+    "@neon/env": "^1.6.6",
+    "@neondatabase/auth": "0.6.0-beta",
+    "@vercel/functions": "3.9.11",
+    "pg": "8.23.1"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.3.0"
+    "@electric-sql/pglite": "^0.3.0",
+    "better-auth": "1.7.6"
   }
 }
