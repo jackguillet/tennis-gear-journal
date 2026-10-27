@@ -51,11 +51,11 @@ Tools: `log_play`, `list_rackets`, `list_sessions`, `delete_session`, `record_re
 ## Measuring
 
 - Hold the phone 10–20 cm from the strings, somewhere quiet.
-- Tap the centre of the strings with a fingertip, about a second apart. The app shows the median of your last five taps.
+- Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm. Tap the centre of the strings firmly with the heel of your palm and lift off at once, about a second apart. The app shows the median of your last five taps.
 - Press **Save this reading** to add it to the racket's history.
 - Right after a restring, set **Strung on** to today, tap, and press **Calibrate**. Readings then match the tension your stringer used.
 
-A tapped string bed rings at one main pitch, usually 400–700 Hz. The app finds it with an FFT, then estimates tension from the head size and the string's weight per metre (gauge and material). Uncalibrated numbers are estimates. The trend for one racket over time is reliable.
+A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. The app finds the lowest clear peak with an FFT (so an off-centre tap's louder overtone isn't mistaken for it), then computes the tension left in the strings from the head size and the string's weight per metre, using the oval-membrane formula that Cross & Bower (Sports Engineering, 2001) checked against a load cell. The big number converts that to stringing-machine terms using the typical 30% (nylon) to 40% (polyester) drop after stringing; calibrating replaces the typical drop with your stringer's. The model and pitch detection live in `public/tension.js` and are tested in `test/tension.test.js`.
 
 ## Develop
 

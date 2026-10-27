@@ -4,9 +4,12 @@ import { readFile } from "node:fs/promises";
 import vm from "node:vm";
 
 const html = await readFile(new URL("../public/index.html", import.meta.url), "utf8");
-const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+// The page script is a module; drop its import lines so vm can syntax-check the rest.
+const scripts = [...html.matchAll(/<script(?: type="module")?>([\s\S]*?)<\/script>/g)].map((m) => m[1].replace(/^import .*$/gm, ""));
 if (!scripts.length) throw new Error("public/index.html has no inline script.");
 scripts.forEach((code, i) => new vm.Script(code, { filename: `public/index.html <script ${i + 1}>` })); // throws on a syntax error
+const tension = await import(new URL("../public/tension.js", import.meta.url));
+if (typeof tension.analyseRecording !== "function") throw new Error("public/tension.js does not export analyseRecording.");
 new vm.Script(await readFile(new URL("../public/sw.js", import.meta.url), "utf8"), { filename: "public/sw.js" });
 JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
 
