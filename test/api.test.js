@@ -118,6 +118,46 @@ test("out-of-range values are refused", async () => {
   }
 });
 
+test("play sessions save per racket, can't be sent twice, and stay private", async () => {
+  let res = await jack.call("POST", "/api/sync", { ops: [
+    { op: "play.add", id: "pl-1", racketId: "jk-blade", d: "2026-10-25", min: 90, kind: "singles" },
+    { op: "play.add", id: "pl-1", racketId: "jk-blade", d: "2026-10-25", min: 90, kind: "singles" }, // sent twice
+    { op: "play.add", id: "pl-2", racketId: "jk-blade", d: "2026-10-26", min: 45, kind: "ball_machine" },
+  ] });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.deepEqual(res.data.rackets["jk-blade"].plays, [
+    { id: "pl-1", d: "2026-10-25", min: 90, kind: "singles" },
+    { id: "pl-2", d: "2026-10-26", min: 45, kind: "ball_machine" },
+  ]);
+  // Sam can't log time on Jack's racket or delete Jack's sessions.
+  res = await sam.call("POST", "/api/sync", { ops: [
+    { op: "play.add", id: "pl-sam", racketId: "jk-blade", d: "2026-10-26", min: 60, kind: "doubles" },
+    { op: "play.delete", id: "pl-1" },
+  ] });
+  assert.equal(res.status, 200);
+  res = await jack.call("POST", "/api/sync", { ops: [{ op: "play.delete", id: "pl-2" }] });
+  assert.deepEqual(res.data.rackets["jk-blade"].plays.map((p) => p.id), ["pl-1"]);
+});
+
+test("bad play sessions are refused", async () => {
+  for (const op of [
+    { op: "play.add", id: "x1", racketId: "jk-blade", d: "yesterday", min: 60, kind: "singles" },
+    { op: "play.add", id: "x2", racketId: "jk-blade", d: "2026-10-26", min: 0, kind: "singles" },
+    { op: "play.add", id: "x3", racketId: "jk-blade", d: "2026-10-26", min: 60, kind: "pickleball" },
+  ]) assert.equal((await jack.call("POST", "/api/sync", { ops: [op] })).status, 400, op.id);
+});
+
+test("each player has their own level and style", async () => {
+  let res = await jack.call("POST", "/api/sync", { ops: [] });
+  assert.deepEqual(res.data.profile, { level: null, style: null });
+  res = await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { level: "4.0", style: "heavy_spin" } }] });
+  assert.deepEqual(res.data.profile, { level: "4.0", style: "heavy_spin" });
+  res = await sam.call("POST", "/api/sync", { ops: [] });
+  assert.deepEqual(res.data.profile, { level: null, style: null });
+  assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { level: "9.9" } }] })).status, 400);
+  assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { style: "moonball" } }] })).status, 400);
+});
+
 test("the auth route refuses odd paths", async () => {
   assert.equal((await jack.call("GET", "/api/auth/..%2f..%2fetc")).status, 404);
 });

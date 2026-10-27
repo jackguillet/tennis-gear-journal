@@ -26,6 +26,10 @@ npm run db:migrate      # optional: create the tables now (the API also does it 
 
 `APP_PASSCODE` is no longer used and can be deleted.
 
+## Tracking play
+
+Under **Play on these strings**, pick the type of play (singles, doubles, hitting, lesson or drills, ball machine, serves), how long, and the day, then press **Log play**. The big number is the hours played since the racket's **Strung on** date, so it starts again from zero when you restring and change that date. Your level (NTRP) and style of play (heavy topspin, flat and so on) are under **Your game**, saved with your account.
+
 ## Put it on your iPhone
 
 1. Open the site in **Safari** and create an account (or sign in).
