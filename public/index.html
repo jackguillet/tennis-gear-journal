@@ -297,6 +297,16 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
         </select>
       </div>
     </div>
+    <h2>Chat assistant</h2>
+    <p class="small">Log play by chatting, for example "I played an hour of singles". Make a private link, then in Claude open Settings, then Connectors, then Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your rackets, so keep it to yourself.</p>
+    <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
+    <div class="field" id="tok-show" hidden>
+      <label for="tok-url">Your connector link (shown once)</label>
+      <input id="tok-url" type="text" readonly>
+      <div class="row-btns"><button class="btn" id="tok-copy" type="button">Copy link</button></div>
+    </div>
+    <p class="small err-text" id="tok-err" hidden></p>
+    <ol class="plays" id="tok-list"></ol>
     <h2>Account and backup</h2>
     <p class="small" id="who"></p>
     <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
@@ -1009,6 +1019,7 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
       user = next; lsSet("sbm-user", user);
       $("acct-pass").value = ""; setMode(false);
       start();
+      loadTokens();
       setStatus(wasCreating ? "Welcome, " + (user.name || user.email) + ". Add your first racket below." : "Signed in as " + (user.name || user.email) + ".");
     } catch { err.textContent = "Can't reach the server. Check your connection and try again."; err.hidden = false; }
     finally { go.disabled = false; }
@@ -1018,10 +1029,56 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
     try { await authCall("sign-out", {}); } catch {}
     try { ["rackets", "outbox", "last-sync", "refused", "profile"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
     user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
+    $("tok-list").textContent = ""; $("tok-show").hidden = true; $("tok-url").value = "";
     $("h-account").textContent = "Sign in"; $("account-intro").textContent = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
     $("acct-email").value = "";
     renderSync();
   };
+
+  // ---------- chat assistant links ----------
+  async function tokensCall(method, body) {
+    const res = await fetch("api/tokens", { method, credentials: "same-origin", headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "That didn't work. Try again.");
+    return data;
+  }
+  function tokErr(msg) { $("tok-err").textContent = msg || ""; $("tok-err").hidden = !msg; }
+  function renderTokens(list) {
+    const ol = $("tok-list"); ol.textContent = "";
+    (list || []).forEach(t => {
+      const li = document.createElement("li");
+      const a = document.createElement("span"); a.className = "t";
+      a.textContent = t.label + " · made " + new Date(t.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " + (t.lastUsedAt ? "last used " + ago(t.lastUsedAt) : "not used yet");
+      const k = document.createElement("span");
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Turn off this link");
+      del.onclick = async () => {
+        if (!confirm("Turn off this link? Any assistant using it stops working.")) return;
+        try { renderTokens((await tokensCall("DELETE", { id: t.id })).tokens); $("tok-show").hidden = true; tokErr(""); } catch (e) { tokErr(e.message); }
+      };
+      li.append(a, k, del); ol.appendChild(li);
+    });
+  }
+  async function loadTokens() {
+    if (!user || !canSync() || !navigator.onLine) return;
+    try { renderTokens((await tokensCall("GET")).tokens); tokErr(""); } catch {}
+  }
+  $("tok-new").onclick = async () => {
+    tokErr(""); $("tok-new").disabled = true;
+    try {
+      const tz = (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone;
+      const out = await tokensCall("POST", { label: "Chat assistant", timezone: tz });
+      $("tok-url").value = new URL("api/mcp/" + out.token.secret, location.href).href;
+      $("tok-show").hidden = false; $("tok-url").select();
+      renderTokens(out.tokens);
+    } catch (e) { tokErr(navigator.onLine ? e.message : "You're offline. Connect to make a link."); }
+    finally { $("tok-new").disabled = false; }
+  };
+  $("tok-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("tok-url").value); $("tok-copy").textContent = "Copied"; setTimeout(() => { $("tok-copy").textContent = "Copy link"; }, 2000); }
+    catch { $("tok-url").select(); }
+  };
+  setTimeout(loadTokens, 1500);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadTokens(); });
 
   // ---------- offline ----------
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
