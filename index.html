@@ -1,0 +1,673 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stringbed Meter</title>
+<meta name="description" content="Tap your tennis racket's strings and read the string-bed tension from the pitch.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stringbed">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1620" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column, phone first. A big readout on a string-grid panel, then racket settings, then history. */
+:root {
+  --bg: #eef1f4;
+  --panel: #ffffff;
+  --ink: #142233;
+  --muted: #5b6b7c;
+  --line: #d5dce4;
+  --court: #1d4f7c;      /* hard-court blue, the accent */
+  --court-soft: #dce8f3;
+  --optic: #c9dc3a;      /* ball yellow, used once on the readout */
+  --good: #2e7d4f;
+  --warn: #b26a00;
+  --bad: #b3261e;
+  --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #95a6b8; --line: #2a3a4b;
+    --court: #6aa8de; --court-soft: #1c3046; --optic: #d4e64d;
+    --good: #5fc48a; --warn: #e0a33a; --bad: #ef7d74; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #95a6b8; --line: #2a3a4b;
+  --court: #6aa8de; --court-soft: #1c3046; --optic: #d4e64d;
+  --good: #5fc48a; --warn: #e0a33a; --bad: #ef7d74; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { color-scheme: light; -webkit-text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+img { max-width: 100%; }
+body {
+  margin: 0;
+  background: var(--bg); color: var(--ink);
+  font: 16px/1.5 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+  -webkit-tap-highlight-color: transparent;
+}
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font: 700 30px/1 var(--f-display); letter-spacing: .01em; margin: 0; text-transform: uppercase; }
+h2 { font: 700 18px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .06em; margin: 0; color: var(--muted); }
+.units { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+.units button { border: 0; background: transparent; color: var(--muted); font: 600 13px var(--f-body); padding: 6px 12px; cursor: pointer; }
+.units button[aria-pressed="true"] { background: var(--court); color: var(--panel); }
+
+.meter {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
+  display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden;
+}
+.meter::before { /* string-bed weave, faint */
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
+  background-image:
+    repeating-linear-gradient(90deg, var(--court-soft) 0 1px, transparent 1px 18px),
+    repeating-linear-gradient(0deg, var(--court-soft) 0 1px, transparent 1px 18px);
+  -webkit-mask-image: linear-gradient(180deg, #000 0, transparent 70%);
+          mask-image: linear-gradient(180deg, #000 0, transparent 70%);
+}
+.meter > * { position: relative; }
+.racket-row { display: flex; gap: 10px; align-items: center; }
+.racket-row select { flex: 1; min-width: 0; }
+.readout { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.big { font: 700 clamp(64px, 20vw, 96px)/.9 var(--f-display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.big .u { font-size: .32em; color: var(--muted); margin-left: 4px; letter-spacing: .04em; }
+.readout .hz { font: 500 15px var(--f-mono); color: var(--muted); padding-bottom: 10px; }
+.chip { display: inline-block; font: 600 12px var(--f-body); letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--court-soft); color: var(--court); }
+.chip.good { color: var(--good); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); }
+.status { font-size: 15px; color: var(--muted); min-height: 1.5em; }
+.status.err { color: var(--bad); }
+canvas#spec { width: 100%; height: 110px; display: block; border-top: 1px solid var(--line); }
+.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.actions .wide { grid-column: 1 / -1; }
+button.btn, label.btn {
+  font: 600 16px var(--f-body); border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: center;
+  border: 1px solid var(--court); background: transparent; color: var(--court);
+}
+button.btn.primary { background: var(--court); color: var(--panel); }
+button.btn:disabled { opacity: .45; cursor: default; }
+button.btn.listening { background: var(--optic); border-color: var(--optic); color: #142233; }
+label.btn { position: relative; }
+label.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+label.btn:focus-within { outline: 3px solid var(--optic); outline-offset: 2px; }
+:focus-visible { outline: 3px solid var(--optic); outline-offset: 2px; }
+.small { font-size: 14px; color: var(--muted); }
+
+section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 380px) { .grid2, .actions { grid-template-columns: 1fr; } }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font: 600 12px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+input, select { font: 16px var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; }
+.row-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.row-btns .btn { padding: 8px 12px; font-size: 14px; }
+.danger { border-color: var(--bad) !important; color: var(--bad) !important; }
+
+canvas#trend { width: 100%; height: 120px; display: block; }
+ol.hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+ol.hist li { display: grid; grid-template-columns: 1fr auto auto 28px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+ol.hist .t { color: var(--muted); font-size: 14px; }
+ol.hist .k { font: 600 16px var(--f-mono); }
+ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
+ol.hist button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
+.empty { color: var(--muted); font-size: 15px; }
+details summary { cursor: pointer; font-weight: 600; }
+details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
+.confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Stringbed Meter</h1>
+    <div class="units" role="group" aria-label="Units">
+      <button id="u-kg" type="button" aria-pressed="true">kg</button>
+      <button id="u-lb" type="button" aria-pressed="false">lb</button>
+    </div>
+  </header>
+
+  <div class="meter">
+    <div class="racket-row">
+      <select id="racket" aria-label="Racket"></select>
+      <span id="sample-chip" class="chip" hidden>Sample tap</span>
+    </div>
+    <div class="readout">
+      <div class="big" id="big">--<span class="u" id="big-u">kg</span></div>
+      <div class="hz" id="hz">-- Hz</div>
+    </div>
+    <div class="small" id="strung-line" hidden></div>
+    <div class="status" id="status" aria-live="polite">Hold the racket by the handle and tap the strings near the centre with your fingertip or another racket.</div>
+    <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
+    <div class="actions">
+      <button class="btn primary" id="listen" type="button">Listen for taps</button>
+      <label class="btn" for="file">Upload a recording<input id="file" type="file" accept="audio/*,video/*"></label>
+      <button class="btn wide" id="save" type="button" disabled>Save this reading</button>
+    </div>
+  </div>
+
+  <section class="card" aria-labelledby="h-hist">
+    <h2 id="h-hist">History</h2>
+    <canvas id="trend" aria-label="Tension over time"></canvas>
+    <ol class="hist" id="hist"></ol>
+  </section>
+
+  <section class="card" aria-labelledby="h-set">
+    <h2 id="h-set">Racket</h2>
+    <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" maxlength="40"></div>
+    <div class="grid2">
+      <div class="field"><label for="r-head">Head size (sq in)</label><input id="r-head" type="number" min="85" max="125" step="1" inputmode="numeric"></div>
+      <div class="field"><label for="r-gauge">String gauge (mm)</label><input id="r-gauge" type="number" min="1.05" max="1.45" step="0.01" inputmode="decimal"></div>
+      <div class="field"><label for="r-mat">String</label>
+        <select id="r-mat">
+          <option value="poly">Polyester</option>
+          <option value="multi">Multifilament / nylon</option>
+          <option value="syngut">Synthetic gut</option>
+          <option value="gut">Natural gut</option>
+          <option value="hybrid">Hybrid (gut or multi + poly)</option>
+          <option value="kevlar">Aramid (Kevlar)</option>
+        </select>
+      </div>
+      <div class="field"><label for="r-pattern">Pattern</label>
+        <select id="r-pattern">
+          <option value="16x19">16 × 19</option>
+          <option value="18x20">18 × 20</option>
+          <option value="16x18">16 × 18</option>
+          <option value="18x19">18 × 19</option>
+        </select>
+      </div>
+      <div class="field"><label for="r-strung" id="r-strung-label">Strung at (kg)</label><input id="r-strung" type="number" min="10" max="80" step="0.5" inputmode="decimal"></div>
+      <div class="field"><label for="r-strungon">Strung on</label><input id="r-strungon" type="date"></div>
+      <div class="field"><label for="r-string">String name</label><input id="r-string" type="text" maxlength="40" placeholder="e.g. ALU Power"></div>
+      <div class="field"><label for="r-weight">Weight (g)</label><input id="r-weight" type="number" min="200" max="400" step="1" inputmode="numeric"></div>
+    </div>
+    <div class="row-btns">
+      <button class="btn" id="add" type="button">Add a racket</button>
+      <button class="btn danger" id="del" type="button">Delete this racket</button>
+    </div>
+    <div class="confirm" id="del-confirm" hidden>
+      <span>Delete <b id="del-name"></b> and its history?</span>
+      <button class="btn danger" id="del-yes" type="button">Delete</button>
+      <button class="btn" id="del-no" type="button">Keep</button>
+    </div>
+
+    <h2>Calibrate</h2>
+    <p class="small" id="cal-text">Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.</p>
+    <div class="grid2">
+      <div class="field"><label for="cal-val" id="cal-label">Strung at (kg)</label><input id="cal-val" type="number" step="0.5" inputmode="decimal"></div>
+      <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
+    </div>
+    <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
+    <h2>Backup</h2>
+    <p class="small" id="store-note">Rackets and readings are saved on this iPhone. Back them up now and then, or before you delete the app.</p>
+    <div class="row-btns">
+      <button class="btn" id="export" type="button">Back up to a file</button>
+      <label class="btn" for="import">Restore from a file<input id="import" type="file" accept="application/json,.json"></label>
+    </div>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>How it works</summary>
+      <p>A tapped string bed rings at one main pitch, usually between 400 and 700 Hz. Tension rises with the square of that pitch. The app finds the pitch, then works out tension from your head size and the weight per metre of your string (its gauge and material).</p>
+      <p>The result is the tension of the whole string bed, which is lower than the tension set on the stringing machine and falls fastest in the first day. Without calibration the number is an estimate, often within 10%. The trend for one racket is reliable either way: use it to see when to restring.</p>
+      <p>Press Listen for taps and allow the microphone. Hold the phone 10–20 cm from the strings, somewhere quiet, and tap the centre of the strings a few times, about a second apart. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
+    </details>
+  </section>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  // ---------- physics ----------
+  const DENSITY = { poly: 1380, multi: 1140, syngut: 1140, gut: 1300, hybrid: 1260, kevlar: 1440 }; // kg/m^3
+  const ASPECT = 1.28;      // head length / width, typical oval
+  const SHAPE = 1.55;       // empirical: clamped oval bed vs ideal membrane, tuned so a fresh 100 sq in poly bed at ~530 Hz reads ~24 kg
+  const PATTERN = { "16x19": 1, "18x20": 1.06, "16x18": 0.98, "18x19": 1.03 }; // denser beds ring higher at the same tension
+  const LB = 2.20462;
+
+  function modelKg(hz, r) {
+    const area = r.head * 6.4516e-4;                      // m^2
+    const b = Math.sqrt(area / (Math.PI * ASPECT)), a = ASPECT * b;
+    const Lm = 2 * a, Lc = 2 * b;
+    const mu = DENSITY[r.material] * Math.PI * Math.pow(r.gauge / 2000, 2); // kg/m
+    const pat = PATTERN[r.pattern] || 1;
+    const N = SHAPE * 8 * mu * hz * hz / (1 / (Lm * Lm) + 1 / (Lc * Lc)) / (pat * pat);
+    return N / 9.80665;
+  }
+  const tensionKg = (hz, r) => modelKg(hz, r) * (r.calib || 1);
+  // A saved reading keeps the setup it was taken with, so a restring or a new calibration
+  // never rewrites old history.
+  const snap = r => ({ head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern, calib: r.calib || 1 });
+  const readingKg = (x, r) => tensionKg(x.hz, x.s ? { ...r, ...x.s } : r);
+
+  // ---------- FFT / pitch ----------
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const ur = re[i + k], ui = im[i + k];
+          const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
+          const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
+          re[i + k] = ur + vr; im[i + k] = ui + vi;
+          re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
+          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
+        }
+      }
+    }
+  }
+  const LO = 330, HI = 850;
+  // Analyse one tap that starts at sample `start`.
+  function analyseTap(x, sr, start, end) {
+    const s = start + Math.round(0.012 * sr);             // skip the click of the impact
+    const len = Math.min(Math.round(0.22 * sr), (end || x.length) - s - Math.round(0.005 * sr));
+    if (len < 0.06 * sr) return null;
+    const N = 32768;
+    const re = new Float64Array(N), im = new Float64Array(N);
+    for (let i = 0; i < len; i++) re[i] = x[s + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (len - 1)));
+    fft(re, im);
+    const binHz = sr / N, b0 = Math.floor(LO / binHz), b1 = Math.ceil(HI / binHz);
+    const mag = new Float64Array(b1 - b0 + 1);
+    let best = 0;
+    for (let k = b0; k <= b1; k++) { mag[k - b0] = Math.hypot(re[k], im[k]); if (mag[k - b0] > mag[best]) best = k - b0; }
+    const sorted = Array.from(mag).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
+    const clarity = mag[best] / median;
+    let off = 0;
+    if (best > 0 && best < mag.length - 1) {
+      const l = Math.log(mag[best - 1] + 1e-12), c = Math.log(mag[best] + 1e-12), r = Math.log(mag[best + 1] + 1e-12);
+      off = 0.5 * (l - r) / (l - 2 * c + r || 1);
+    }
+    return { hz: (b0 + best + off) * binHz, clarity, mag, binHz, b0 };
+  }
+  // Find every tap in a recording and return the median result.
+  function analyseRecording(x, sr) {
+    const hop = Math.round(0.005 * sr), env = [];
+    for (let i = 0; i + hop <= x.length; i += hop) { let m = 0; for (let j = i; j < i + hop; j++) m = Math.max(m, Math.abs(x[j])); env.push(m); }
+    const peak = Math.max(...env, 0);
+    if (peak < 0.01) return { error: "The recording is almost silent. Hold the phone closer to the strings and tap harder." };
+    const taps = [], gap = Math.round(0.2 * sr / hop);
+    for (let i = 1; i < env.length; i++) {
+      if (env[i] > peak * 0.15 && env[i] > env[i - 1] * 1.8 && (!taps.length || i - taps[taps.length - 1] > gap)) taps.push(i);
+    }
+    if (!taps.length) taps.push(env.indexOf(peak));
+    const res = taps.map((t, k) => analyseTap(x, sr, t * hop, k + 1 < taps.length ? taps[k + 1] * hop : x.length)).filter(r => r && r.clarity > 6);
+    if (!res.length) return { error: "No clear ring found. Tap the centre of the strings with a fingertip, not the frame, somewhere quiet." };
+    res.sort((p, q) => p.hz - q.hz);
+    const mid = res[res.length >> 1];
+    const spread = res.length > 1 ? (res[res.length - 1].hz - res[0].hz) / mid.hz : 0;
+    return { ...mid, taps: res.length, spread };
+  }
+
+  // ---------- state & storage ----------
+  const $ = id => document.getElementById(id);
+  const prefs = (() => { try { return JSON.parse(localStorage.getItem("sbm-prefs") || "{}"); } catch { return {}; } })();
+  const savePrefs = () => { try { localStorage.setItem("sbm-prefs", JSON.stringify(prefs)); } catch {} };
+  let unit = prefs.unit === "lb" ? "lb" : "kg";
+  let rackets = {};       // id -> racket
+  let current = null;     // racket id
+  let last = null;        // last analysis {hz, ...}
+  let lastIsSample = false;
+
+  const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [] });
+
+  function localLoad() { try { return JSON.parse(localStorage.getItem("sbm-rackets") || "{}"); } catch { return {}; } }
+  function localSave() { try { localStorage.setItem("sbm-rackets", JSON.stringify(rackets)); } catch {} }
+
+  function persist() { localSave(); }
+  function removeStored() { localSave(); }
+
+  // ---------- rendering ----------
+  const fmt = kg => unit === "kg" ? kg.toFixed(1) : (kg * LB).toFixed(1);
+  function setStatus(msg, err) { const s = $("status"); s.textContent = msg; s.classList.toggle("err", !!err); }
+  const R = () => rackets[current];
+
+  function renderSelect() {
+    const sel = $("racket"); sel.textContent = "";
+    Object.entries(rackets).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([id, r]) => {
+      const o = document.createElement("option"); o.value = id; o.textContent = r.name + (r.example ? " (example)" : ""); sel.appendChild(o);
+    });
+    sel.value = current;
+  }
+  function renderSettings() {
+    const r = R(); if (!r) return;
+    $("r-name").value = r.name; $("r-head").value = r.head; $("r-gauge").value = r.gauge;
+    $("r-mat").value = r.material; $("r-pattern").value = r.pattern || "16x19";
+    $("cal-label").textContent = "Strung at (" + unit + ")";
+    $("r-strung-label").textContent = "Strung at (" + unit + ")";
+    $("r-strung").value = r.strungKg ? fmt(r.strungKg) : "";
+    $("r-strungon").value = r.strungOn || "";
+    $("r-string").value = r.stringName || "";
+    $("r-weight").value = r.weight || "";
+    const fresh = r.strungOn && (Date.now() - new Date(r.strungOn + "T12:00:00").getTime()) < 2 * 864e5;
+    $("cal-val").value = r.strungKg && fresh ? fmt(r.strungKg) : "";
+    const sl = $("strung-line"), bits = [];
+    if (r.stringName) bits.push(r.stringName);
+    if (r.strungKg) bits.push("strung at " + fmt(r.strungKg) + " " + unit);
+    if (r.strungOn) {
+      const days = Math.floor((Date.now() - new Date(r.strungOn + "T12:00:00").getTime()) / 864e5);
+      bits.push("on " + new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + (days >= 0 ? " (" + days + (days === 1 ? " day" : " days") + " ago)" : ""));
+    }
+    sl.hidden = !bits.length;
+    sl.textContent = bits.length ? bits.join(", ").replace(/^./, c => c.toUpperCase()) : "";
+    $("cal-reset").hidden = !(r.calib && r.calib !== 1);
+    $("cal-text").textContent = r.calib && r.calib !== 1
+      ? "Calibrated" + (r.calibAt ? " on " + new Date(r.calibAt).toLocaleDateString() : "") + ". Recalibrate after each restring."
+      : "Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.";
+  }
+  function renderReadout() {
+    const r = R();
+    $("big-u").textContent = unit;
+    $("u-kg").setAttribute("aria-pressed", unit === "kg"); $("u-lb").setAttribute("aria-pressed", unit === "lb");
+    if (last && r) {
+      $("big").firstChild.nodeValue = fmt(tensionKg(last.hz, r));
+      $("hz").textContent = last.hz.toFixed(0) + " Hz";
+    } else { $("big").firstChild.nodeValue = "--"; $("hz").textContent = "-- Hz"; }
+    $("sample-chip").hidden = !lastIsSample;
+    $("save").disabled = !last || lastIsSample;
+    $("cal-go").disabled = !last || lastIsSample;
+    drawSpectrum();
+  }
+  function renderHistory() {
+    const r = R(), list = $("hist"); list.textContent = "";
+    const rs = r ? r.readings.slice().sort((a, b) => b.t - a.t) : [];
+    if (!rs.length) {
+      const li = document.createElement("li"); li.className = "empty"; li.style.display = "block";
+      li.textContent = "No saved readings for this racket yet. Tap, then press Save this reading.";
+      list.appendChild(li);
+    }
+    const base = r && baseline(r);
+    rs.forEach(x => {
+      const li = document.createElement("li");
+      const kg = readingKg(x, r);
+      const d = new Date(x.t);
+      const t = document.createElement("span"); t.className = "t"; t.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      const k = document.createElement("span"); k.className = "k"; k.textContent = fmt(kg) + " " + unit;
+      const h = document.createElement("span"); h.className = "h";
+      if (base && x.t !== base.t) { const loss = (1 - kg / readingKg(base, r)) * 100; h.textContent = (loss >= 0 ? "−" : "+") + Math.abs(loss).toFixed(0) + "%"; }
+      else h.textContent = x.hz.toFixed(0) + " Hz";
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this reading");
+      del.onclick = () => { r.readings = r.readings.filter(y => y !== x); persist(current); renderHistory(); };
+      li.append(t, k, h, del); list.appendChild(li);
+    });
+    drawTrend();
+  }
+  // first reading since the last calibration (or ever) is the reference for loss %
+  function baseline(r) {
+    const rs = r.readings.filter(x => !r.calibAt || x.t >= r.calibAt).sort((a, b) => a.t - b.t);
+    return rs[0] || null;
+  }
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); }
+
+  // ---------- canvases ----------
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  function prep(c) {
+    const dpr = window.devicePixelRatio || 1, w = c.clientWidth, h = c.clientHeight;
+    c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+    const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    return { g, w, h };
+  }
+  function drawSpectrum() {
+    const { g, w, h } = prep($("spec"));
+    const padB = 18, H = h - padB;
+    g.font = "11px " + css("--f-mono"); g.fillStyle = css("--muted"); g.strokeStyle = css("--line"); g.lineWidth = 1;
+    for (let f = 400; f <= 800; f += 100) {
+      const x = (f - LO) / (HI - LO) * w;
+      g.beginPath(); g.moveTo(x, 4); g.lineTo(x, H); g.stroke();
+      g.textAlign = "center"; g.fillText(f + " Hz", x, h - 4);
+    }
+    if (!last || !last.mag) return;
+    const m = last.mag, max = Math.max(...m);
+    g.beginPath();
+    for (let i = 0; i < m.length; i++) {
+      const f = (last.b0 + i) * last.binHz, x = (f - LO) / (HI - LO) * w, y = H - (m[i] / max) * (H - 8);
+      i ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.lineTo(w, H); g.lineTo(0, H); g.closePath();
+    g.fillStyle = css("--court-soft"); g.fill();
+    g.strokeStyle = css("--court"); g.lineWidth = 1.5; g.stroke();
+    const px = (last.hz - LO) / (HI - LO) * w;
+    g.fillStyle = css("--optic"); g.strokeStyle = css("--ink"); g.lineWidth = 1;
+    g.beginPath(); g.arc(px, 8, 5, 0, Math.PI * 2); g.fill(); g.stroke();
+  }
+  function drawTrend() {
+    const c = $("trend"), r = R();
+    const { g, w, h } = prep(c);
+    const rs = r ? r.readings.slice().sort((a, b) => a.t - b.t) : [];
+    c.hidden = rs.length < 2;
+    if (rs.length < 2) return;
+    const ys = rs.map(x => +fmt(readingKg(x, r)));
+    let lo = Math.min(...ys), hi = Math.max(...ys); const pad = Math.max(0.5, (hi - lo) * 0.2); lo -= pad; hi += pad;
+    const t0 = rs[0].t, t1 = rs[rs.length - 1].t || t0 + 1;
+    const L = 44, B = 16, X = t => L + (t - t0) / ((t1 - t0) || 1) * (w - L - 10), Y = v => 8 + (hi - v) / (hi - lo) * (h - B - 16);
+    g.font = "11px " + css("--f-mono"); g.fillStyle = css("--muted"); g.strokeStyle = css("--line"); g.textAlign = "right";
+    [hi - pad, lo + pad].forEach(v => { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - 10, Y(v)); g.stroke(); g.fillText(v.toFixed(1), L - 6, Y(v) + 4); });
+    g.textAlign = "left"; g.fillText(new Date(t0).toLocaleDateString(undefined, { month: "short", day: "numeric" }), L, h - 2);
+    g.textAlign = "right"; g.fillText(new Date(t1).toLocaleDateString(undefined, { month: "short", day: "numeric" }), w - 10, h - 2);
+    g.beginPath(); rs.forEach((x, i) => i ? g.lineTo(X(x.t), Y(ys[i])) : g.moveTo(X(x.t), Y(ys[i])));
+    g.strokeStyle = css("--court"); g.lineWidth = 2; g.stroke();
+    g.fillStyle = css("--court");
+    rs.forEach((x, i) => { g.beginPath(); g.arc(X(x.t), Y(ys[i]), i === rs.length - 1 ? 4.5 : 2.5, 0, Math.PI * 2); g.fill(); });
+  }
+
+  // ---------- results ----------
+  function showResult(res, sample) {
+    if (res.error) { setStatus(res.error, true); return; }
+    last = res; lastIsSample = !!sample;
+    if (sample) setStatus("This is a made-up sample so you can see the display. Tap your own racket to measure it.");
+    else {
+      let msg = res.taps > 1 ? `Median of ${res.taps} taps.` : "One clear tap.";
+      if (res.spread > 0.04) msg += " Taps disagreed by " + (res.spread * 100).toFixed(0) + "%, so tap the same spot each time.";
+      else if (res.taps === 1) msg += " Tap two or three more times for a steadier number.";
+      setStatus(msg);
+    }
+    renderReadout();
+  }
+  function sampleTap() {
+    const sr = 44100, x = new Float32Array(sr);
+    let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
+    for (let i = 0; i < x.length; i++) {
+      const t = i / sr;
+      x[i] = (t > 0.1 ? Math.exp(-(t - 0.1) * 14) * (0.6 * Math.sin(2 * Math.PI * 532 * t) + 0.12 * Math.sin(2 * Math.PI * 1064 * t)) : 0) + rnd() * 0.01;
+    }
+    return analyseRecording(x, sr);
+  }
+
+  // ---------- live microphone ----------
+  let ctx = null, stream = null, proc = null, live = false, liveTaps = [];
+  async function startListening() {
+    // iOS only lets audio start inside the tap, so make the context before waiting on the microphone
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+    } catch (e) {
+      try { ctx.close(); } catch {}
+      setStatus(e && e.name === "NotAllowedError"
+        ? "Microphone access is off. Turn it on in Settings › Safari › Microphone (or for this app), or upload a recording instead."
+        : "The microphone couldn't start. Upload a recording of 3 or 4 taps instead.", true);
+      return;
+    }
+    if (ctx.state === "suspended") await ctx.resume();
+    liveTaps = [];
+    const src = ctx.createMediaStreamSource(stream), sr = ctx.sampleRate;
+    const ring = new Float32Array(Math.round(sr * 1.0)); let w = 0, noise = 0.002, armedAt = -1, cool = 0, filled = 0;
+    proc = ctx.createScriptProcessor(2048, 1, 1);
+    proc.onaudioprocess = ev => {
+      const d = ev.inputBuffer.getChannelData(0); let pk = 0;
+      for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(d[i])); }
+      filled += d.length;
+      if (armedAt < 0) {
+        if (cool > 0) cool -= d.length;
+        else if (pk > Math.max(0.02, noise * 8)) armedAt = filled - d.length;
+        else noise = noise * 0.95 + pk * 0.05;
+      } else if (filled - armedAt > 0.3 * sr) {
+        const n = ring.length, seg = new Float32Array(n);
+        for (let i = 0; i < n; i++) seg[i] = ring[(w + i) % n];
+        armedAt = -1; cool = 0.25 * sr;
+        const res = analyseRecording(seg, sr);
+        if (res.error) { setStatus(res.error, true); return; }
+        // live taps build up: show the median of the last five
+        liveTaps.push(res); if (liveTaps.length > 5) liveTaps.shift();
+        const byHz = liveTaps.slice().sort((p, q) => p.hz - q.hz), mid = byHz[byHz.length >> 1];
+        const spread = byHz.length > 1 ? (byHz[byHz.length - 1].hz - byHz[0].hz) / mid.hz : 0;
+        showResult({ ...mid, taps: liveTaps.length, spread }, false);
+      }
+    };
+    src.connect(proc); proc.connect(ctx.destination);
+    live = true; $("listen").textContent = "Listening… tap the strings"; $("listen").classList.add("listening");
+    setStatus("Listening. Tap the centre of the strings.");
+  }
+  function stopListening() {
+    live = false;
+    try { proc && proc.disconnect(); stream && stream.getTracks().forEach(t => t.stop()); ctx && ctx.close(); } catch {}
+    $("listen").textContent = "Listen for taps"; $("listen").classList.remove("listening");
+  }
+
+  // ---------- events ----------
+  $("listen").onclick = () => live ? stopListening() : startListening();
+  $("file").onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    setStatus("Reading " + f.name + "…");
+    try {
+      const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
+      const buf = await ac.decodeAudioData(await f.arrayBuffer());
+      const ch = buf.getChannelData(0);
+      showResult(analyseRecording(ch, buf.sampleRate), false);
+    } catch { setStatus("This file couldn't be read as audio. Try an .m4a, .mp3 or .wav recording.", true); }
+  };
+  $("save").onclick = () => {
+    const r = R(); if (!r || !last || lastIsSample) return;
+    if (r.example) { delete r.example; }
+    r.readings.push({ t: Date.now(), hz: +last.hz.toFixed(1), s: snap(r) });
+    if (r.readings.length > 300) r.readings.shift();
+    persist(current); renderSelect(); renderHistory();
+    setStatus("Saved " + fmt(tensionKg(last.hz, r)) + " " + unit + " for " + r.name + ".");
+    $("save").disabled = true;
+  };
+  $("racket").onchange = e => { current = e.target.value; prefs.racket = current; savePrefs(); renderSettings(); renderReadout(); renderHistory(); };
+  const bind = (id, key, num) => $(id).addEventListener("change", e => {
+    const r = R(); let v = e.target.value;
+    if (num) { v = parseFloat(v); if (!isFinite(v)) { renderSettings(); return; } v = Math.min(+e.target.max, Math.max(+e.target.min, v)); }
+    else v = v.trim() || r.name;
+    r[key] = v; persist(current);
+    if (key === "name") renderSelect();
+    renderSettings(); renderReadout(); renderHistory();
+  });
+  $("r-strung").addEventListener("change", e => {
+    const r = R(), v = parseFloat(e.target.value);
+    r.strungKg = isFinite(v) ? +(unit === "lb" ? v / LB : v).toFixed(2) : null;
+    persist(current); renderSettings();
+  });
+  $("r-strungon").addEventListener("change", e => { R().strungOn = e.target.value || null; persist(current); renderSettings(); });
+  $("r-string").addEventListener("change", e => { R().stringName = e.target.value.trim() || null; persist(current); renderSettings(); });
+  $("r-weight").addEventListener("change", e => { const v = parseInt(e.target.value, 10); R().weight = isFinite(v) ? v : null; persist(current); });
+  bind("r-name", "name"); bind("r-head", "head", true); bind("r-gauge", "gauge", true); bind("r-mat", "material"); bind("r-pattern", "pattern");
+  $("add").onclick = () => {
+    const id = newId(); rackets[id] = blank("Racket " + (Object.keys(rackets).length + 1));
+    current = id; prefs.racket = id; savePrefs(); persist(id); renderAll(); $("r-name").focus();
+  };
+  $("del").onclick = () => { $("del-name").textContent = R().name; $("del-confirm").hidden = false; };
+  $("del-no").onclick = () => { $("del-confirm").hidden = true; };
+  $("del-yes").onclick = () => {
+    $("del-confirm").hidden = true;
+    delete rackets[current]; removeStored(current);
+    if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); persist(id); }
+    current = Object.keys(rackets)[0]; renderAll();
+  };
+  $("cal-go").onclick = () => {
+    const r = R(); let v = parseFloat($("cal-val").value);
+    if (!isFinite(v) || !last) { setStatus("Enter the tension the racket was strung at, then press Calibrate.", true); return; }
+    const kg = unit === "lb" ? v / LB : v;
+    if (kg < 10 || kg > 35) { setStatus("That tension looks out of range. Strung tensions are usually 18–30 kg (40–65 lb).", true); return; }
+    const age = r.strungOn ? Math.floor((Date.now() - new Date(r.strungOn + "T12:00:00").getTime()) / 864e5) : null;
+    if (age !== null && age > 2) {
+      setStatus("These strings went in " + age + " days ago and have lost tension since, so calibrating now would hide that loss. If you just restrung, change Strung on to today first.", true);
+      return;
+    }
+    r.calib = kg / modelKg(last.hz, r); r.calibAt = Date.now();
+    r.strungKg = +kg.toFixed(2);
+    if (!r.strungOn) r.strungOn = new Date().toLocaleDateString("en-CA");
+    r.readings.push({ t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
+    delete r.example; persist(current); renderAll();
+    setStatus("Calibrated. This tap now reads " + fmt(kg) + " " + unit + " and is saved as the starting point for tension loss.");
+  };
+  $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
+  const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); };
+  $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
+  let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawSpectrum(); drawTrend(); }, 100); });
+  matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { drawSpectrum(); drawTrend(); });
+  new MutationObserver(() => { drawSpectrum(); drawTrend(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  // ---------- boot ----------
+  function boot(list) {
+    rackets = list;
+    if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
+    current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
+    renderAll();
+    if (!last) showResult(sampleTap(), true);
+  }
+  // First run: start with the two rackets set up for this app.
+  function defaults() {
+    const base = { head: 98, gauge: 1.25, material: "poly", pattern: "16x19", weight: 305, stringName: "Luxilon ALU Power", strungKg: 22.68, calib: 1, calibAt: null, readings: [] };
+    return {
+      "blade-v8": { ...base, name: "Wilson Blade 98 v8", strungOn: "2026-10-11" },
+      "blade-v9": { ...base, name: "Wilson Blade 98 v9", strungOn: "2026-06-20", readings: [] },
+    };
+  }
+  let stored = localLoad();
+  if (!Object.keys(stored).length) { stored = defaults(); rackets = stored; localSave(); }
+  boot(stored);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  // ---------- backup ----------
+  $("export").onclick = async () => {
+    const name = "stringbed-backup-" + new Date().toLocaleDateString("en-CA") + ".json";
+    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 1, rackets }, null, 2)], { type: "application/json" });
+    const file = new File([blob], name, { type: "application/json" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Stringbed backup" }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  $("import").onchange = async e => {
+    const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const list = data && data.rackets;
+      if (!list || typeof list !== "object" || !Object.values(list).every(r => r && r.name && Array.isArray(r.readings))) throw 0;
+      rackets = list; localSave();
+      current = Object.keys(rackets)[0]; renderAll();
+      setStatus("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
+    } catch { setStatus("That file isn't a Stringbed backup.", true); }
+  };
+
+  // ---------- offline ----------
+  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+})();
+</script>
+</body>
+</html>
