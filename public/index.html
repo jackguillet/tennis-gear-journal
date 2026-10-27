@@ -127,8 +127,9 @@ ol.hist button { border: 0; background: none; color: var(--muted); font-size: 18
 .empty { color: var(--muted); font-size: 15px; }
 details summary { cursor: pointer; font-weight: 600; }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.signin-row { display: flex; gap: 10px; }
-.signin-row input { flex: 1; min-width: 0; }
+.app { display: flex; flex-direction: column; gap: 18px; }
+.account-form { display: flex; flex-direction: column; gap: 12px; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--court); font: 600 15px var(--f-body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .err-text { color: var(--bad); }
 details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
 .confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
@@ -145,17 +146,20 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     </div>
   </header>
 
-  <section class="card" id="signin" hidden aria-labelledby="h-signin">
-    <h2 id="h-signin">Sign in to sync</h2>
-    <p class="small">Enter your passcode to sync your rackets between devices. Until then, changes stay on this device.</p>
-    <form id="signin-form" class="signin-row">
-      <input id="signin-user" type="text" autocomplete="username" value="stringbed" hidden>
-      <input id="passcode" type="password" autocomplete="current-password" placeholder="Passcode" aria-label="Passcode" required>
-      <button class="btn primary" id="signin-go" type="submit">Sign in</button>
+  <section class="card" id="account" hidden aria-labelledby="h-account">
+    <h2 id="h-account">Sign in</h2>
+    <p class="small" id="account-intro">Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.</p>
+    <form id="account-form" class="account-form">
+      <div class="field" id="f-name" hidden><label for="acct-name">Your name</label><input id="acct-name" type="text" autocomplete="name" maxlength="60"></div>
+      <div class="field"><label for="acct-email">Email</label><input id="acct-email" type="email" autocomplete="email" required></div>
+      <div class="field"><label for="acct-pass">Password</label><input id="acct-pass" type="password" autocomplete="current-password" minlength="8" required></div>
+      <button class="btn primary" id="acct-go" type="submit">Sign in</button>
     </form>
-    <p class="small err-text" id="signin-err" hidden></p>
+    <p class="small err-text" id="acct-err" role="alert" hidden></p>
+    <p class="small"><button class="linkbtn" id="acct-switch" type="button">New here? Create an account</button></p>
   </section>
 
+  <div id="app" class="app" hidden>
   <div class="meter">
     <div class="racket-row">
       <select id="racket" aria-label="Racket"></select>
@@ -227,7 +231,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
     </div>
     <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
-    <h2>Sync and backup</h2>
+    <h2>Account and backup</h2>
+    <p class="small" id="who"></p>
     <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
     <div class="row-btns">
       <button class="btn" id="signout" type="button" hidden>Sign out</button>
@@ -244,6 +249,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       <p>Press Listen for taps and allow the microphone. Hold the phone 10–20 cm from the strings, somewhere quiet, and tap the centre of the strings a few times, about a second apart. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
     </details>
   </section>
+  </div>
 </div>
 
 <script>
@@ -353,12 +359,14 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : newId() + Math.random().toString(36).slice(2, 10));
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
-  function localLoad() { return lsGet("sbm-rackets", {}); }
+  // The signed-in player. Each player's copy on this device is kept under their own keys.
+  let user = lsGet("sbm-user", null);
+  const key = name => "sbm-" + name + ":" + (user ? user.id : "none");
+  function localLoad() { return lsGet(key("rackets"), {}); }
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
-  let outbox = lsGet("sbm-outbox", []);
-  let needsSeed = lsGet("sbm-seed", false);
-  function localSave() { lsSet("sbm-rackets", rackets); lsSet("sbm-outbox", outbox); lsSet("sbm-seed", needsSeed); }
+  let outbox = lsGet(key("outbox"), []);
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -390,24 +398,23 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   }
 
   // ---------- sync ----------
-  let syncing = false, again = false, signedIn = null, online = navigator.onLine !== false, lastSync = lsGet("sbm-last-sync", 0), syncTimer = null, refused = null;
+  let syncing = false, again = false, signedIn = null, online = navigator.onLine !== false, lastSync = lsGet(key("last-sync"), 0), syncTimer = null, refused = null;
   const canSync = () => location.protocol === "https:" || location.hostname === "localhost";
   function syncSoon() { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 800); }
   async function sync() {
-    if (!canSync()) return;
+    if (!canSync() || !user) return;
     if (syncing) { again = true; return; }
     syncing = true;
-    // On a brand-new device, first look at what the server has before sending anything,
-    // so the starting rackets are only uploaded to an empty account.
-    const sent = needsSeed ? [] : outbox.slice(0, 400);
+    const sent = outbox.slice(0, 400), forUser = user.id;
     try {
       const res = await fetch("api/sync", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops: sent }) });
       online = true;
+      if (!user || user.id !== forUser) return; // signed out or switched player meanwhile
       if (res.status === 401) { signedIn = false; return; }
       const body = await res.json().catch(() => ({}));
       if (res.status === 400) {
         // The server refused this batch. Keep a copy on the device and move on, so one bad change can't block syncing forever.
-        lsSet("sbm-refused", { at: Date.now(), error: body.error, ops: sent });
+        lsSet(key("refused"), { at: Date.now(), error: body.error, ops: sent });
         refused = body.error || "a change was refused";
         outbox = outbox.filter(o => !sent.includes(o)); localSave(); again = true;
         return;
@@ -415,18 +422,12 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       if (!res.ok) throw new Error(body.error || "HTTP " + res.status);
       signedIn = true;
       outbox = outbox.filter(o => !sent.includes(o));
-      const server = body.rackets || {};
-      if (needsSeed && !Object.keys(server).length) {
-        // A brand-new account: upload the rackets this device started with.
-        needsSeed = false; Object.keys(rackets).forEach(persist); localSave(); again = true;
-        return;
-      }
-      needsSeed = false;
-      rackets = server;
+      if (body.user) { user = { ...user, ...body.user }; lsSet("sbm-user", user); }
+      rackets = body.rackets || {};
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
-      lastSync = Date.now(); lsSet("sbm-last-sync", lastSync);
+      lastSync = Date.now(); lsSet(key("last-sync"), lastSync);
       localSave();
       if (outbox.length) again = true;
       renderAfterSync();
@@ -448,11 +449,15 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   }
   function renderSync() {
     const chip = $("sync-chip"), note = $("store-note"), n = outbox.length;
-    $("signin").hidden = signedIn !== false;
-    $("signout").hidden = signedIn !== true;
+    $("account").hidden = !!user && signedIn !== false;
+    $("app").hidden = !user;
+    $("signout").hidden = !user;
+    $("who").textContent = user ? "Signed in as " + (user.name ? user.name + " (" + user.email + ")" : user.email) + "." : "";
+    if (user && signedIn === false) { $("h-account").textContent = "Sign in again"; $("account-intro").textContent = "Your session ended. Sign in again to sync. Until then, changes stay on this device."; if (!$("acct-email").value) $("acct-email").value = user.email || ""; }
     if (!canSync()) { chip.hidden = true; note.textContent = "Rackets and readings are saved on this device."; return; }
     chip.hidden = false; chip.className = "chip";
-    if (signedIn === false) { chip.textContent = "Not synced"; chip.classList.add("warn"); note.textContent = "Not signed in. Changes stay on this device" + (n ? " (" + n + " waiting)" : "") + "."; }
+    if (!user) { chip.hidden = true; return; }
+    if (signedIn === false) { chip.textContent = "Not synced"; chip.classList.add("warn"); note.textContent = "Signed out. Changes stay on this device" + (n ? " (" + n + " waiting)" : "") + "."; }
     else if (!online) { chip.textContent = n ? n + " waiting" : "Offline"; chip.classList.add("warn"); note.textContent = "Offline. " + (n ? n + " changes will sync when you're back online." : "Everything is saved on this device."); }
     else if (n) { chip.textContent = "Syncing"; note.textContent = n + " changes syncing."; }
     else { chip.textContent = "Synced"; chip.classList.add("good"); note.textContent = "Synced " + (lastSync ? ago(lastSync) : "") + ". Your rackets are the same on every device you sign in on."; }
@@ -751,19 +756,29 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     renderAll();
     if (!last) showResult(sampleTap(), true);
   }
-  // First run: start with the two rackets set up for this app.
-  function defaults() {
-    const base = { head: 98, gauge: 1.25, material: "poly", pattern: "16x19", weight: 305, stringName: "Luxilon ALU Power", strungKg: 22.68, calib: 1, calibAt: null, readings: [] };
-    return {
-      "blade-v8": { ...base, name: "Wilson Blade 98 v8", strungOn: "2026-10-11" },
-      "blade-v9": { ...base, name: "Wilson Blade 98 v9", strungOn: "2026-06-20", readings: [] },
-    };
+  function start() {
+    outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
+    if (user) adoptOldCopy();
+    boot(localLoad());
+    renderSync();
+    sync();
   }
-  let stored = localLoad();
-  if (!Object.keys(stored).length && !outbox.length) { stored = defaults(); rackets = stored; needsSeed = true; localSave(); }
-  boot(stored);
-  renderSync();
-  sync();
+  // Rackets kept on this device by the single-user version (before accounts) go to the
+  // first player who signs in here, and upload with their next sync.
+  function adoptOldCopy() {
+    const old = lsGet("sbm-rackets", null), oldOutbox = lsGet("sbm-outbox", []);
+    if (!old && !oldOutbox.length) return;
+    rackets = localLoad();
+    Object.entries(old || {}).forEach(([id, r]) => {
+      if (rackets[id]) return;
+      const readings = r.readings || [];
+      rackets[id] = { ...r, readings: [] }; persist(id);
+      readings.forEach(x => addReading(id, { id: x.id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }));
+    });
+    try { ["sbm-rackets", "sbm-outbox", "sbm-seed", "sbm-last-sync", "sbm-refused"].forEach(k => localStorage.removeItem(k)); } catch {}
+    localSave();
+  }
+  start();
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 
   // ---------- backup ----------
@@ -794,21 +809,57 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     } catch { setStatus("That file isn't a Stringbed backup.", true); }
   };
 
-  // ---------- sign in ----------
-  $("signin-form").addEventListener("submit", async e => {
+  // ---------- accounts (Neon Auth through this app's /api/auth) ----------
+  let creating = false;
+  function setMode(c) {
+    creating = c;
+    $("f-name").hidden = !c; $("acct-name").required = c;
+    $("acct-pass").autocomplete = c ? "new-password" : "current-password";
+    $("acct-go").textContent = c ? "Create account" : "Sign in";
+    if (!user) $("h-account").textContent = c ? "Create an account" : "Sign in";
+    $("acct-switch").textContent = c ? "Have an account? Sign in" : "New here? Create an account";
+    $("acct-err").hidden = true;
+  }
+  $("acct-switch").onclick = () => setMode(!creating);
+  const authCall = async (path, body) => {
+    const res = await fetch("api/auth/" + path, { method: body === undefined ? "GET" : "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
+    const data = await res.json().catch(() => null);
+    return { ok: res.ok, status: res.status, data };
+  };
+  $("account-form").addEventListener("submit", async e => {
     e.preventDefault();
-    const err = $("signin-err"); err.hidden = true; $("signin-go").disabled = true;
+    const err = $("acct-err"), go = $("acct-go"); err.hidden = true; go.disabled = true;
+    const email = $("acct-email").value.trim(), password = $("acct-pass").value;
     try {
-      const res = await fetch("api/login", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ passcode: $("passcode").value }) });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) { err.textContent = body.error || "Sign in didn't work. Try again."; err.hidden = false; return; }
-      $("passcode").value = ""; signedIn = true; renderSync(); sync();
+      const res = creating
+        ? await authCall("sign-up/email", { name: $("acct-name").value.trim() || email.split("@")[0], email, password })
+        : await authCall("sign-in/email", { email, password });
+      if (!res.ok) {
+        const msg = res.data && (res.data.message || res.data.error);
+        err.textContent = res.status === 401 ? "That email and password don't match." : msg || "That didn't work. Try again.";
+        err.hidden = false; return;
+      }
+      const session = await authCall("get-session");
+      const who = session.data && session.data.user;
+      if (!who) { err.textContent = "Check your email to confirm your account, then sign in."; err.hidden = false; setMode(false); return; }
+      const wasCreating = creating;
+      const next = { id: String(who.id), name: who.name || "", email: who.email || email };
+      if (user && user.id !== next.id) { rackets = {}; current = null; }
+      user = next; lsSet("sbm-user", user);
+      $("acct-pass").value = ""; setMode(false);
+      start();
+      setStatus(wasCreating ? "Welcome, " + (user.name || user.email) + ". Add your first racket below." : "Signed in as " + (user.name || user.email) + ".");
     } catch { err.textContent = "Can't reach the server. Check your connection and try again."; err.hidden = false; }
-    finally { $("signin-go").disabled = false; }
+    finally { go.disabled = false; }
   });
   $("signout").onclick = async () => {
-    try { await fetch("api/login", { method: "DELETE", credentials: "same-origin" }); } catch {}
-    signedIn = false; renderSync();
+    if (outbox.length && !confirm(outbox.length + " changes haven't synced yet and will be lost from this device. Sign out anyway?")) return;
+    try { await authCall("sign-out", {}); } catch {}
+    try { ["rackets", "outbox", "last-sync", "refused"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
+    user = null; rackets = {}; outbox = []; signedIn = null; current = null;
+    $("h-account").textContent = "Sign in"; $("account-intro").textContent = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
+    $("acct-email").value = "";
+    renderSync();
   };
 
   // ---------- offline ----------

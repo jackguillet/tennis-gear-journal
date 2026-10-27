@@ -1,19 +1,29 @@
 import { db } from "../lib/db.js";
-import { isSignedIn } from "../lib/auth.js";
-import { applyOps, getState } from "../lib/store.js";
+import { currentUser } from "../lib/auth.js";
+import { serializeSetCookie } from "@neondatabase/auth/server";
+import { applyOps, claimUnowned, getState } from "../lib/store.js";
 import { ensureSchema } from "../lib/schema.js";
 import { json, readJson } from "../lib/http.js";
 
-// POST /api/sync  { ops: [...] }  ->  { rackets: {...} }
-// Applies the phone's pending changes, then returns everything. An empty ops list is a plain fetch.
+// POST /api/sync  { ops: [...] }  ->  { user, rackets: {...} }
+// Applies the signed-in user's pending changes, then returns all of that user's rackets.
+// An empty ops list is a plain fetch.
 export async function POST(request) {
-  if (!isSignedIn(request)) return json({ error: "Sign in to sync." }, 401);
+  const cookies = [];
+  let user;
+  try { user = await currentUser(request, cookies); }
+  catch (e) { console.error(e); return json({ error: "Sign-in isn't set up on the server yet." }, 503); }
+  if (!user) return json({ error: "Sign in to sync." }, 401);
+  const headers = new Headers({ "content-type": "application/json", "cache-control": "no-store" });
+  for (const c of cookies) headers.append("set-cookie", serializeSetCookie(c));
   try {
     const body = await readJson(request);
     const store = db();
     await ensureSchema(store);
-    await applyOps(store, body.ops || []);
-    return json(await getState(store));
+    await claimUnowned(store, user);
+    await applyOps(store, user.id, body.ops || []);
+    const state = await getState(store, user.id);
+    return new Response(JSON.stringify({ user, ...state }), { status: 200, headers });
   } catch (e) {
     if (e.status) return json({ error: e.message }, e.status);
     console.error(e);

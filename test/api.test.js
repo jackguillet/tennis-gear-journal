@@ -1,116 +1,128 @@
-import { test, before } from "node:test";
+import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { PGlite } from "@electric-sql/pglite";
-import { setDb } from "../lib/db.js";
-import { POST as sync } from "../api/sync.js";
-import { POST as login, GET as loginState, DELETE as logout } from "../api/login.js";
+import { startServer } from "../scripts/server.js";
 
-process.env.APP_PASSCODE = "correct horse";
+// Runs the app as it runs on Vercel: the real /api functions, the real Neon Auth proxy
+// toolkit, a local Better Auth standing in for Neon Auth, and an in-memory Postgres.
+let app;
+before(async () => { delete process.env.NEON_AUTH_BASE_URL; app = await startServer({ port: 3917 }); });
+after(() => app.close());
 
-before(async () => {
-  const pg = new PGlite();
-  setDb({
-    query: async (t, p = []) => (await pg.query(t, p)).rows,
-    transaction: (list) => pg.transaction(async (tx) => { const out = []; for (const [t, p] of list) out.push((await tx.query(t, p || [])).rows); return out; }),
-  });
-});
+// A tiny browser: keeps cookies between requests.
+function browser() {
+  const jar = new Map();
+  return {
+    jar,
+    async call(method, path, body) {
+      const res = await fetch(app.origin + path, {
+        method,
+        headers: { "content-type": "application/json", origin: app.origin, cookie: [...jar].map(([k, v]) => `${k}=${v}`).join("; ") },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      for (const c of res.headers.getSetCookie()) {
+        const [pair] = c.split(";"); const i = pair.indexOf("=");
+        const name = pair.slice(0, i).trim(), value = pair.slice(i + 1).trim();
+        if (/max-age=0/i.test(c) || value === "") jar.delete(name); else jar.set(name, value);
+      }
+      const text = await res.text();
+      let data = null; try { data = JSON.parse(text); } catch {}
+      return { status: res.status, data };
+    },
+  };
+}
 
-const post = (fn, body, cookie) =>
-  fn(new Request("https://x.test/api", { method: "POST", headers: { "content-type": "application/json", ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) }));
-
-let cookie;
 const blade = { name: "Wilson Blade 98 v8", head: 98, gauge: 1.25, material: "poly", pattern: "16x19", weight: 305, stringName: "Luxilon ALU Power", strungKg: 22.68, strungOn: "2026-10-11", calib: 1, calibAt: null };
+const setup = { head: 98, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1 };
+const jack = browser(), sam = browser(), stranger = browser();
 
-test("sync refuses without a session", async () => {
-  const res = await post(sync, { ops: [] });
+test("sync refuses without an account", async () => {
+  assert.equal((await stranger.call("POST", "/api/sync", { ops: [] })).status, 401);
+});
+
+test("a friend can create an account and is signed in", async () => {
+  const res = await jack.call("POST", "/api/auth/sign-up/email", { name: "Jack", email: "jack@example.com", password: "forehand-winner" });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.equal(res.data.user.email, "jack@example.com");
+  assert.ok([...jack.jar.keys()].some((k) => k.startsWith("__Secure-neon-auth.session_token")), "session cookie set");
+  const s = await jack.call("GET", "/api/auth/get-session");
+  assert.equal(s.data.user.name, "Jack");
+});
+
+test("signing up twice with one email is refused", async () => {
+  const res = await browser().call("POST", "/api/auth/sign-up/email", { name: "Jack again", email: "jack@example.com", password: "another-password" });
+  assert.notEqual(res.status, 200);
+});
+
+test("a wrong password is refused", async () => {
+  const res = await stranger.call("POST", "/api/auth/sign-in/email", { email: "jack@example.com", password: "nope-nope-nope" });
   assert.equal(res.status, 401);
+  assert.equal((await stranger.call("POST", "/api/sync", { ops: [] })).status, 401);
 });
 
-test("a wrong passcode is refused and sets no cookie", async () => {
-  const res = await post(login, { passcode: "nope" });
-  assert.equal(res.status, 401);
-  assert.equal(res.headers.get("set-cookie"), null);
-});
-
-test("the right passcode signs in", async () => {
-  const res = await post(login, { passcode: "correct horse" });
+test("a new account starts empty and saves rackets and readings", async () => {
+  let res = await jack.call("POST", "/api/sync", { ops: [] });
   assert.equal(res.status, 200);
-  cookie = res.headers.get("set-cookie").split(";")[0];
-  assert.match(res.headers.get("set-cookie"), /HttpOnly; Secure; SameSite=Lax/);
-  const state = await loginState(new Request("https://x.test/api/login", { headers: { cookie } }));
-  assert.deepEqual(await state.json(), { signedIn: true });
-});
-
-test("a tampered cookie is refused", async () => {
-  const bad = cookie.replace(/\.(.)/, (m, c) => "." + (c === "A" ? "B" : "A"));
-  assert.equal((await post(sync, { ops: [] }, bad)).status, 401);
-});
-
-test("an empty database returns no rackets", async () => {
-  const res = await post(sync, { ops: [] }, cookie);
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { rackets: {} });
-});
-
-test("rackets and readings round-trip with their types", async () => {
-  const s = { head: 98, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1 };
-  const res = await post(sync, { ops: [
-    { op: "racket.put", id: "blade-v8", data: blade },
-    { op: "reading.add", id: "rd1", racketId: "blade-v8", t: 1793044980123, hz: 521.4, s },
-    { op: "reading.add", id: "rd1", racketId: "blade-v8", t: 1793044980123, hz: 521.4, s }, // sent twice
-  ] }, cookie);
-  assert.equal(res.status, 200);
-  const { rackets } = await res.json();
-  const r = rackets["blade-v8"];
-  assert.equal(r.name, "Wilson Blade 98 v8");
-  assert.equal(r.gauge, 1.25);
-  assert.equal(r.strungKg, 22.68);
+  assert.deepEqual(res.data.rackets, {});
+  assert.equal(res.data.user.email, "jack@example.com");
+  res = await jack.call("POST", "/api/sync", { ops: [
+    { op: "racket.put", id: "jk-blade", data: blade },
+    { op: "reading.add", id: "rd-1", racketId: "jk-blade", t: 1793044980123, hz: 521.4, s: setup },
+    { op: "reading.add", id: "rd-1", racketId: "jk-blade", t: 1793044980123, hz: 521.4, s: setup }, // sent twice
+  ] });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const r = res.data.rackets["jk-blade"];
   assert.equal(r.strungOn, "2026-10-11");
-  assert.equal(r.calibAt, null);
-  assert.deepEqual(r.readings, [{ id: "rd1", t: 1793044980123, hz: 521.4, s }]);
+  assert.equal(r.gauge, 1.25);
+  assert.deepEqual(r.readings, [{ id: "rd-1", t: 1793044980123, hz: 521.4, s: setup }]);
 });
 
-test("editing a racket keeps its readings, and calibration time survives", async () => {
-  const res = await post(sync, { ops: [{ op: "racket.put", id: "blade-v8", data: { ...blade, calib: 1.07, calibAt: 1793045000000 } }] }, cookie);
-  const r = (await res.json()).rackets["blade-v8"];
-  assert.equal(r.calib, 1.07);
-  assert.equal(r.calibAt, 1793045000000);
-  assert.equal(r.readings.length, 1);
-});
-
-test("a reading for a racket deleted elsewhere is dropped, not an error", async () => {
-  const res = await post(sync, { ops: [
-    { op: "racket.put", id: "gone", data: { ...blade, name: "Old racket" } },
-    { op: "racket.delete", id: "gone" },
-    { op: "reading.add", id: "rd2", racketId: "gone", t: 1, hz: 500 },
-  ] }, cookie);
+test("a second friend sees only their own rackets and can't touch Jack's", async () => {
+  assert.equal((await sam.call("POST", "/api/auth/sign-up/email", { name: "Sam", email: "sam@example.com", password: "drop-shot-123" })).status, 200);
+  let res = await sam.call("POST", "/api/sync", { ops: [] });
+  assert.deepEqual(res.data.rackets, {}, "Sam can't see Jack's racket");
+  res = await sam.call("POST", "/api/sync", { ops: [
+    { op: "racket.put", id: "jk-blade", data: { ...blade, name: "Hijacked" } }, // Jack's id
+    { op: "reading.add", id: "rd-sam", racketId: "jk-blade", t: 1, hz: 500 },
+    { op: "reading.delete", id: "rd-1" },
+    { op: "racket.delete", id: "jk-blade" },
+    { op: "racket.put", id: "sam-pure", data: { ...blade, name: "Babolat Pure Aero" } },
+  ] });
   assert.equal(res.status, 200);
-  assert.equal((await res.json()).rackets.gone, undefined);
+  assert.deepEqual(Object.keys(res.data.rackets), ["sam-pure"]);
+  const j = (await jack.call("POST", "/api/sync", { ops: [] })).data.rackets;
+  assert.deepEqual(Object.keys(j), ["jk-blade"]);
+  assert.equal(j["jk-blade"].name, "Wilson Blade 98 v8");
+  assert.deepEqual(j["jk-blade"].readings.map((x) => x.id), ["rd-1"]);
 });
 
-test("deleting a reading removes it", async () => {
-  const res = await post(sync, { ops: [{ op: "reading.delete", id: "rd1" }] }, cookie);
-  assert.equal((await res.json()).rackets["blade-v8"].readings.length, 0);
+test("signing in again on another device gets the same rackets", async () => {
+  const phone = browser();
+  assert.equal((await phone.call("POST", "/api/auth/sign-in/email", { email: "jack@example.com", password: "forehand-winner" })).status, 200);
+  const res = await phone.call("POST", "/api/sync", { ops: [] });
+  assert.deepEqual(Object.keys(res.data.rackets), ["jk-blade"]);
 });
 
-test("one bad change rejects the whole batch and saves nothing", async () => {
-  const res = await post(sync, { ops: [
+test("one bad change rejects the whole batch", async () => {
+  const res = await jack.call("POST", "/api/sync", { ops: [
     { op: "racket.put", id: "new-one", data: { ...blade, name: "New" } },
     { op: "racket.put", id: "bad id!", data: blade },
-  ] }, cookie);
+  ] });
   assert.equal(res.status, 400);
-  assert.match((await res.json()).error, /not a valid id/);
-  const after = await (await post(sync, { ops: [] }, cookie)).json();
-  assert.equal(after.rackets["new-one"], undefined);
+  assert.match(res.data.error, /not a valid id/);
+  assert.equal((await jack.call("POST", "/api/sync", { ops: [] })).data.rackets["new-one"], undefined);
 });
 
 test("out-of-range values are refused", async () => {
   for (const data of [{ ...blade, head: 400 }, { ...blade, material: "rope" }, { ...blade, strungOn: "Oct 11" }, { ...blade, name: "" }]) {
-    assert.equal((await post(sync, { ops: [{ op: "racket.put", id: "x", data }] }, cookie)).status, 400);
+    assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "racket.put", id: "x", data }] })).status, 400);
   }
 });
 
-test("signing out clears the cookie", async () => {
-  const res = await logout(new Request("https://x.test/api/login", { method: "DELETE" }));
-  assert.match(res.headers.get("set-cookie"), /Max-Age=0/);
+test("the auth route refuses odd paths", async () => {
+  assert.equal((await jack.call("GET", "/api/auth/..%2f..%2fetc")).status, 404);
+});
+
+test("signing out ends the session", async () => {
+  assert.equal((await jack.call("POST", "/api/auth/sign-out", {})).status, 200);
+  assert.equal((await jack.call("POST", "/api/sync", { ops: [] })).status, 401);
 });

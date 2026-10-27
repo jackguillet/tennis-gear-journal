@@ -1,22 +1,36 @@
 # Tennis Gear Journal
 
-**Stringbed Meter:** tap your tennis racket's strings and read the string-bed tension from the pitch. A web app you install on your iPhone's Home Screen. Rackets and readings sync through a Neon Postgres database. The app keeps working with no signal and catches up when you're back online.
+**Stringbed Meter:** tap your tennis racket's strings and read the string-bed tension from the pitch. A web app you install on your iPhone's Home Screen. Each player has their own account, so you can share the link with friends: everyone gets their own rackets and history. Data lives in Neon Postgres, accounts are Neon Auth, and the app is hosted on Vercel. It keeps working with no signal and catches up when you're back online.
 
-## Deploy (Vercel + Neon)
+## Set up Neon
 
-1. **Import the repo** at [vercel.com/new](https://vercel.com/new) and pick `jackguillet/tennis-gear-journal`. Framework preset: **Other**. Leave the build settings empty (`vercel.json` serves `public/`).
-2. **Add a database:** in the project, open **Storage → Create Database → Neon** (or connect an existing Neon project). This sets `DATABASE_URL`. The tables are created on the first sync, so there is no migration step.
-3. **Set a passcode:** in **Settings → Environment Variables**, add `APP_PASSCODE`. Use a long phrase, since it is the only lock on your data. Optional: add `SESSION_SECRET` (any long random string). Without it, sessions are signed with a key derived from the passcode, and changing the passcode signs out every device.
-4. **Redeploy** so the variables take effect.
+The Neon project is linked in `.neon` (project `young-sunset-08728679`, branch `production`). `neon.ts` declares Postgres and Neon Auth (`auth: true`).
+
+```sh
+npm i -g neon@latest
+neon login              # opens a browser sign-in
+neon deploy             # enables Neon Auth on the branch, writes DATABASE_URL, DATABASE_URL_UNPOOLED and NEON_AUTH_BASE_URL to .env.local
+neon neon-auth domain add https://<your-app>.vercel.app   # Neon Auth only accepts sign-ins from listed origins
+npm run db:migrate      # optional: create the tables now (the API also does it on first sync)
+```
+
+## Deploy on Vercel
+
+1. Import the repo at [vercel.com/new](https://vercel.com/new). Framework preset: **Other**. Leave the build settings alone (`vercel.json` serves `public/`, and `npm run build` checks that everything loads).
+2. In **Settings → Environment Variables**, add these:
+   - `DATABASE_URL`: the pooled connection string from `.env.local`. If you connect Neon through Vercel's **Storage** tab instead, it sets this for you. Use the same project and branch.
+   - `NEON_AUTH_BASE_URL`: from `.env.local`.
+   - `NEON_AUTH_COOKIE_SECRET`: any 32+ random characters (`openssl rand -base64 32`).
+   - `OWNER_EMAIL` (optional): your email. Rackets saved by the earlier passcode version have no owner and move to this account the first time you sign in.
+3. Redeploy, then open the site, create your account and send the link to friends.
+
+`APP_PASSCODE` is no longer used and can be deleted.
 
 ## Put it on your iPhone
 
-1. Open your Vercel address (for example `https://tennis-gear-journal.vercel.app`) in **Safari**.
-2. Sign in with your passcode.
-3. Tap **Share**, then **Add to Home Screen**.
-4. Open **Stringbed** from the Home Screen, press **Listen for taps**, and allow the microphone.
-
-The first device to sign in uploads the two starting rackets (Wilson Blade 98 v8 and v9). Every device after that gets them from the server.
+1. Open the site in **Safari** and create an account (or sign in).
+2. Tap **Share**, then **Add to Home Screen**.
+3. Open **Stringbed** from the Home Screen, press **Listen for taps**, and allow the microphone.
 
 ## Measuring
 
@@ -31,17 +45,23 @@ A tapped string bed rings at one main pitch, usually 400–700 Hz. The app finds
 
 ```sh
 npm install
-npm run dev     # http://localhost:3000, passcode "dev", in-memory Postgres (PGlite)
-npm test        # API tests against PGlite
+npm run dev     # http://localhost:3000, in-memory Postgres and a local stand-in for Neon Auth
+npm test        # API tests: accounts, per-player data, sync, upgrades
+npm run build   # checks the page, service worker and API routes load
 ```
+
+`npm run dev` reads `.env.local`. With `NEON_AUTH_BASE_URL` set there, it uses your real Neon Auth; add `http://localhost:3000` as a trusted domain first. With `USE_DATABASE_URL=1`, it uses your real database.
 
 | Path | What it is |
 | --- | --- |
 | `public/index.html` | The whole front end: no build step, no libraries |
 | `public/sw.js` | Offline cache. Bump `VERSION` when you change a file in `public/`. |
-| `api/sync.js` | `POST /api/sync {ops}`: applies queued changes in one transaction and returns all rackets |
-| `api/login.js` | Passcode sign-in. The session is a signed, HttpOnly cookie. |
-| `lib/store.js` | Validation and SQL for each change (`racket.put`, `racket.delete`, `reading.add`, `reading.delete`) |
-| `lib/schema.js` | Tables, created on first use. `npm run db:migrate` creates them ahead of time. |
+| `api/auth.js` | `/api/auth/*` forwards to Neon Auth (Better Auth endpoints such as `sign-up/email`, `sign-in/email`, `sign-out`, `get-session`), so session cookies stay on this site |
+| `api/sync.js` | `POST /api/sync {ops}`: applies the signed-in player's queued changes in one transaction and returns their rackets |
+| `lib/auth.js` | Neon Auth proxy and session check (`@neondatabase/auth/server`) |
+| `lib/db.js` | node-postgres pool, attached to Vercel Fluid compute |
+| `lib/store.js` | Validation and SQL for each change, all scoped to the player |
+| `lib/schema.js` | Tables, created on first use. Accounts themselves live in Neon Auth's `neon_auth` schema. |
+| `scripts/local-auth.js` | Open-source Better Auth in memory, standing in for Neon Auth in dev and tests |
 
-Changes are queued on the device and sent in order. Each reading has an id made on the phone, so a retry never saves it twice. A reading for a racket that another device deleted is dropped instead of failing the sync.
+Changes are queued on the device and sent in order. Each reading has an id made on the phone, so a retry never saves it twice. A change aimed at another player's racket does nothing.
