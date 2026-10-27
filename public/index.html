@@ -133,6 +133,23 @@ details summary { cursor: pointer; font-weight: 600; }
 .err-text { color: var(--bad); }
 details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
 .confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
+.hours { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hours .num { font: 700 44px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.hours .num .u { font-size: .45em; color: var(--muted); margin-left: 3px; }
+.picks { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
+.picks legend { font: 600 12px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0; margin-bottom: 6px; width: 100%; }
+.picks label { position: relative; }
+.picks input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.picks span { display: inline-block; font: 600 15px var(--f-body); padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); cursor: pointer; min-height: 38px; }
+.picks input:checked + span { background: var(--court); border-color: var(--court); color: var(--panel); }
+.picks input:focus-visible + span { outline: 3px solid var(--optic); outline-offset: 2px; }
+.log-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
+ol.plays { list-style: none; margin: 0; padding: 0; }
+ol.plays li { display: grid; grid-template-columns: 1fr auto 28px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+ol.plays .t { color: var(--muted); font-size: 14px; }
+ol.plays .k { font: 500 15px var(--f-mono); }
+ol.plays button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
+.split { font-size: 14px; color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -178,6 +195,25 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       <button class="btn wide" id="save" type="button" disabled>Save this reading</button>
     </div>
   </div>
+
+  <section class="card" aria-labelledby="h-play">
+    <h2 id="h-play">Play on these strings</h2>
+    <div class="hours"><div class="num" id="hours-num">0<span class="u">h</span></div><div class="small" id="hours-line"></div></div>
+    <div class="split" id="hours-split" hidden></div>
+    <fieldset class="picks" id="kind-picks">
+      <legend>Type of play</legend>
+    </fieldset>
+    <fieldset class="picks" id="dur-picks">
+      <legend>Time</legend>
+    </fieldset>
+    <div class="log-row">
+      <div class="field" id="f-dur-other" hidden><label for="dur-other">Hours</label><input id="dur-other" type="number" min="0.25" max="10" step="0.25" inputmode="decimal" placeholder="e.g. 2.5"></div>
+      <div class="field"><label for="play-date">Day</label><input id="play-date" type="date"></div>
+      <button class="btn primary" id="log-play" type="button">Log play</button>
+    </div>
+    <ol class="plays" id="plays"></ol>
+    <button class="linkbtn" id="plays-more" type="button" hidden>Show older sessions</button>
+  </section>
 
   <section class="card" aria-labelledby="h-hist">
     <h2 id="h-hist">History</h2>
@@ -231,6 +267,36 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
     </div>
     <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
+    <h2>Your game</h2>
+    <p class="small">Your level and style are saved with your account. Heavy spin wears through strings much faster than flat hitting, so this helps you read your hours.</p>
+    <div class="grid2">
+      <div class="field"><label for="p-level">Level (NTRP)</label>
+        <select id="p-level">
+          <option value="">Not set</option>
+          <option value="2.0">2.0 (beginner)</option>
+          <option value="2.5">2.5</option>
+          <option value="3.0">3.0</option>
+          <option value="3.5">3.5</option>
+          <option value="4.0">4.0</option>
+          <option value="4.5">4.5</option>
+          <option value="5.0">5.0</option>
+          <option value="5.5">5.5</option>
+          <option value="6.0">6.0+ (college or pro)</option>
+          <option value="7.0">7.0 (touring pro)</option>
+        </select>
+      </div>
+      <div class="field"><label for="p-style">Style of play</label>
+        <select id="p-style">
+          <option value="">Not set</option>
+          <option value="heavy_spin">Heavy topspin</option>
+          <option value="moderate_spin">Moderate topspin</option>
+          <option value="flat">Flat hitter</option>
+          <option value="all_court">All-court / slice</option>
+          <option value="serve_volley">Serve and volley</option>
+          <option value="counter">Counterpuncher</option>
+        </select>
+      </div>
+    </div>
     <h2>Account and backup</h2>
     <p class="small" id="who"></p>
     <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
@@ -354,7 +420,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   let lastIsSample = false;
 
   const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [] });
+  const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [], plays: [] });
 
   const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : newId() + Math.random().toString(36).slice(2, 10));
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
@@ -363,10 +429,11 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   let user = lsGet("sbm-user", null);
   const key = name => "sbm-" + name + ":" + (user ? user.id : "none");
   function localLoad() { return lsGet(key("rackets"), {}); }
+  let profile = { level: null, style: null };
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -375,7 +442,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   });
   function queue(op) {
     // A newer edit of the same racket replaces the queued one in place, so it still goes before that racket's readings.
-    const i = op.op === "racket.put" ? outbox.findIndex(o => o.op === "racket.put" && o.id === op.id) : -1;
+    const i = op.op === "racket.put" ? outbox.findIndex(o => o.op === "racket.put" && o.id === op.id)
+      : op.op === "profile.put" ? outbox.findIndex(o => o.op === "profile.put") : -1;
     if (i >= 0) outbox[i] = op; else outbox.push(op);
     localSave(); syncSoon();
   }
@@ -390,8 +458,21 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     const r = rackets[id]; r.readings = r.readings.filter(y => y !== x);
     if (x.id) queue({ op: "reading.delete", id: x.id }); else localSave();
   }
+  function addPlay(id, p) {
+    const r = rackets[id]; p.id = p.id || uid(); (r.plays = r.plays || []).push(p);
+    persist(id);
+    queue({ op: "play.add", id: p.id, racketId: id, d: p.d, min: p.min, kind: p.kind });
+  }
+  function removePlay(id, p) {
+    const r = rackets[id]; r.plays = (r.plays || []).filter(y => y !== p);
+    queue({ op: "play.delete", id: p.id });
+  }
+  function saveProfile() { queue({ op: "profile.put", data: { level: profile.level || null, style: profile.style || null } }); }
   function applyLocal(op) {
-    if (op.op === "racket.put") rackets[op.id] = { ...op.data, readings: rackets[op.id] ? rackets[op.id].readings : [] };
+    if (op.op === "racket.put") rackets[op.id] = { ...op.data, readings: rackets[op.id] ? rackets[op.id].readings : [], plays: rackets[op.id] ? rackets[op.id].plays || [] : [] };
+    else if (op.op === "play.add") { const r = rackets[op.racketId]; if (r && !(r.plays || []).some(x => x.id === op.id)) (r.plays = r.plays || []).push({ id: op.id, d: op.d, min: op.min, kind: op.kind }); }
+    else if (op.op === "play.delete") Object.values(rackets).forEach(r => { r.plays = (r.plays || []).filter(x => x.id !== op.id); });
+    else if (op.op === "profile.put") profile = { ...op.data };
     else if (op.op === "racket.delete") delete rackets[op.id];
     else if (op.op === "reading.add") { const r = rackets[op.racketId]; if (r && !r.readings.some(x => x.id === op.id)) r.readings.push({ id: op.id, t: op.t, hz: op.hz, ...(op.s ? { s: op.s } : {}) }); }
     else if (op.op === "reading.delete") Object.values(rackets).forEach(r => { r.readings = r.readings.filter(x => x.id !== op.id); });
@@ -424,6 +505,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       outbox = outbox.filter(o => !sent.includes(o));
       if (body.user) { user = { ...user, ...body.user }; lsSet("sbm-user", user); }
       rackets = body.rackets || {};
+      if (body.profile) profile = body.profile;
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
@@ -441,7 +523,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   function renderAfterSync() {
     // Don't overwrite a field the person is typing in.
     const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
-    renderSelect(); if (!editing) renderSettings(); renderReadout(); renderHistory();
+    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays();
   }
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
@@ -497,7 +579,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     if (r.strungKg) bits.push("strung at " + fmt(r.strungKg) + " " + unit);
     if (r.strungOn) {
       const days = Math.floor((Date.now() - new Date(r.strungOn + "T12:00:00").getTime()) / 864e5);
-      bits.push("on " + new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + (days >= 0 ? " (" + days + (days === 1 ? " day" : " days") + " ago)" : ""));
+      const played = onTheseStrings(r).reduce((a, p) => a + p.min, 0);
+      bits.push("on " + new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) + (days >= 0 ? " (" + days + (days === 1 ? " day" : " days") + " ago" + (played ? ", " + hrs(played) + " h played" : "") + ")" : ""));
     }
     sl.hidden = !bits.length;
     sl.textContent = bits.length ? bits.join(", ").replace(/^./, c => c.toUpperCase()) : "";
@@ -548,7 +631,54 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     const rs = r.readings.filter(x => !r.calibAt || x.t >= r.calibAt).sort((a, b) => a.t - b.t);
     return rs[0] || null;
   }
-  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); }
+  // ---------- play ----------
+  const KINDS = [["singles", "Singles"], ["doubles", "Doubles"], ["hitting", "Hitting"], ["drills", "Lesson / drills"], ["ball_machine", "Ball machine"], ["serves", "Serves"]];
+  const KIND_NAME = Object.fromEntries(KINDS);
+  const DURS = [[30, "30 min"], [45, "45 min"], [60, "1 h"], [90, "1.5 h"], [120, "2 h"], [180, "3 h"], [0, "Other"]];
+  const today = () => new Date().toLocaleDateString("en-CA");
+  const hrs = min => { const h = min / 60; return (Math.round(h * 10) / 10).toString(); };
+  // Sessions on the current strings: on or after the day they were strung (all of them if no date is set).
+  const onTheseStrings = r => (r.plays || []).filter(p => !r.strungOn || p.d >= r.strungOn);
+  function buildPicks() {
+    const add = (box, name, items, sel) => items.forEach(([v, label]) => {
+      const l = document.createElement("label"), i = document.createElement("input"), sp = document.createElement("span");
+      i.type = "radio"; i.name = name; i.value = v; i.checked = String(v) === String(sel);
+      sp.textContent = label; l.append(i, sp); box.appendChild(l);
+    });
+    add($("kind-picks"), "kind", KINDS, prefs.kind || "singles");
+    add($("dur-picks"), "dur", DURS, prefs.dur ?? 90);
+    $("f-dur-other").hidden = String(prefs.dur ?? 90) !== "0";
+  }
+  function renderPlays() {
+    const r = R(), list = $("plays"); list.textContent = "";
+    if (!r) return;
+    const mine = onTheseStrings(r), total = mine.reduce((a, p) => a + p.min, 0);
+    $("hours-num").firstChild.nodeValue = hrs(total);
+    const since = r.strungOn ? new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+    $("hours-line").textContent = (mine.length ? mine.length + (mine.length === 1 ? " session" : " sessions") : "No sessions yet")
+      + (since ? " since these strings went in on " + since + "." : ". Set Strung on below so the count restarts when you restring.");
+    const by = {}; mine.forEach(p => { by[p.kind] = (by[p.kind] || 0) + p.min; });
+    const parts = KINDS.filter(([k]) => by[k]).map(([k, n]) => n + " " + hrs(by[k]) + " h");
+    $("hours-split").hidden = parts.length < 2; $("hours-split").textContent = parts.join(" · ");
+    const all = (r.plays || []).slice().sort((a, b) => b.d.localeCompare(a.d) || 0);
+    const shown = showAllPlays ? all : all.slice(0, 5);
+    shown.forEach(p => {
+      const li = document.createElement("li");
+      const t = document.createElement("span"); t.className = "t";
+      t.textContent = new Date(p.d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + (KIND_NAME[p.kind] || p.kind) + (r.strungOn && p.d < r.strungOn ? " (old strings)" : "");
+      const k = document.createElement("span"); k.className = "k"; k.textContent = hrs(p.min) + " h";
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this session");
+      del.onclick = () => { removePlay(current, p); renderPlays(); };
+      li.append(t, k, del); list.appendChild(li);
+    });
+    $("plays-more").hidden = showAllPlays || all.length <= 5;
+    if (!$("play-date").value) $("play-date").value = today();
+    $("play-date").max = today();
+  }
+  let showAllPlays = false;
+  function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
+
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); }
 
   // ---------- canvases ----------
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -694,7 +824,34 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
     setStatus("Saved " + fmt(tensionKg(last.hz, r)) + " " + unit + " for " + r.name + ".");
     $("save").disabled = true;
   };
-  $("racket").onchange = e => { current = e.target.value; prefs.racket = current; savePrefs(); renderSettings(); renderReadout(); renderHistory(); };
+  $("racket").onchange = e => { current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false; renderSettings(); renderReadout(); renderHistory(); renderPlays(); };
+  $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); });
+  $("dur-picks").addEventListener("change", e => {
+    prefs.dur = +e.target.value; savePrefs();
+    $("f-dur-other").hidden = prefs.dur !== 0;
+    if (prefs.dur === 0) $("dur-other").focus();
+  });
+  $("log-play").onclick = () => {
+    const r = R(); if (!r) return;
+    const kind = (document.querySelector('input[name="kind"]:checked') || {}).value || "singles";
+    let min = +((document.querySelector('input[name="dur"]:checked') || {}).value ?? 90);
+    if (min === 0) {
+      const h = parseFloat($("dur-other").value);
+      if (!isFinite(h) || h <= 0 || h > 10) { setPlayMsg("Enter how many hours you played, for example 2.5."); $("dur-other").focus(); return; }
+      min = Math.round(h * 60);
+    }
+    const d = $("play-date").value || today();
+    if (d > today()) { setPlayMsg("That day hasn't happened yet."); return; }
+    addPlay(current, { d, min, kind });
+    $("play-date").value = today();
+    renderPlays(); renderSettings();
+    const total = onTheseStrings(r).reduce((a, p) => a + p.min, 0);
+    setPlayMsg("Logged " + hrs(min) + " h of " + KIND_NAME[kind].toLowerCase() + ". " + hrs(total) + " h on these strings.");
+  };
+  function setPlayMsg(m) { $("hours-line").textContent = m; }
+  $("plays-more").onclick = () => { showAllPlays = true; renderPlays(); };
+  $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); };
+  $("p-style").onchange = e => { profile.style = e.target.value || null; saveProfile(); };
   const bind = (id, key, num) => $(id).addEventListener("change", e => {
     const r = R(); let v = e.target.value;
     if (num) { v = parseFloat(v); if (!isFinite(v)) { renderSettings(); return; } v = Math.min(+e.target.max, Math.max(+e.target.min, v)); }
@@ -743,6 +900,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   };
   $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
   const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); };
+  buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawSpectrum(); drawTrend(); }, 100); });
   matchMedia("(prefers-color-scheme: dark)").addEventListener?.("change", () => { drawSpectrum(); drawTrend(); });
@@ -758,6 +916,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   }
   function start() {
     outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
+    profile = lsGet(key("profile"), { level: null, style: null });
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();
@@ -784,7 +943,7 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   // ---------- backup ----------
   $("export").onclick = async () => {
     const name = "stringbed-backup-" + new Date().toLocaleDateString("en-CA") + ".json";
-    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 1, rackets }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 2, rackets, profile }, null, 2)], { type: "application/json" });
     const file = new File([blob], name, { type: "application/json" });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Stringbed backup" }); return; }
@@ -800,10 +959,12 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
       if (!list || typeof list !== "object" || !Object.values(list).every(r => r && r.name && Array.isArray(r.readings))) throw 0;
       Object.keys(rackets).filter(id => !list[id]).forEach(id => { delete rackets[id]; removeStored(id); });
       Object.entries(list).forEach(([id, r]) => {
-        const readings = r.readings || [];
-        rackets[id] = { ...r, readings: [] }; persist(id);
+        const readings = r.readings || [], plays = r.plays || [];
+        rackets[id] = { ...r, readings: [], plays: [] }; persist(id);
         readings.forEach(x => { if (rackets[id].readings.some(y => y.id && y.id === x.id)) return; addReading(id, { id: x.id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }); });
+        plays.forEach(p => { if (p && p.d && p.min && p.kind) addPlay(id, { id: p.id, d: p.d, min: p.min, kind: p.kind }); });
       });
+      if (data.profile && typeof data.profile === "object") { profile = { level: data.profile.level || null, style: data.profile.style || null }; saveProfile(); }
       current = Object.keys(rackets)[0]; localSave(); renderAll();
       setStatus("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
     } catch { setStatus("That file isn't a Stringbed backup.", true); }
@@ -855,8 +1016,8 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
   $("signout").onclick = async () => {
     if (outbox.length && !confirm(outbox.length + " changes haven't synced yet and will be lost from this device. Sign out anyway?")) return;
     try { await authCall("sign-out", {}); } catch {}
-    try { ["rackets", "outbox", "last-sync", "refused"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
-    user = null; rackets = {}; outbox = []; signedIn = null; current = null;
+    try { ["rackets", "outbox", "last-sync", "refused", "profile"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
+    user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
     $("h-account").textContent = "Sign in"; $("account-intro").textContent = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
     $("acct-email").value = "";
     renderSync();
