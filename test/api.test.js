@@ -102,19 +102,32 @@ test("signing in again on another device gets the same rackets", async () => {
   assert.deepEqual(Object.keys(res.data.rackets), ["jk-blade"]);
 });
 
-test("one bad change rejects the whole batch", async () => {
+test("one bad change is skipped and reported, and the rest still save", async () => {
   const res = await jack.call("POST", "/api/sync", { ops: [
     { op: "racket.put", id: "new-one", data: { ...blade, name: "New" } },
     { op: "racket.put", id: "bad id!", data: blade },
+    { op: "racket.put", id: "heavy", data: { ...blade, weight: 3050 } },
+    { op: "play.add", id: "pl-keep", racketId: "new-one", d: "2026-10-26", min: 60, kind: "singles" },
   ] });
-  assert.equal(res.status, 400);
-  assert.match(res.data.error, /not a valid id/);
-  assert.equal((await jack.call("POST", "/api/sync", { ops: [] })).data.rackets["new-one"], undefined);
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  assert.deepEqual(res.data.refused.map((r) => r.index), [1, 2]);
+  assert.match(res.data.refused[0].error, /not a valid id/);
+  assert.match(res.data.refused[1].error, /Weight/);
+  assert.equal(res.data.rackets["new-one"].name, "New");
+  assert.deepEqual(res.data.rackets["new-one"].plays.map((p) => p.id), ["pl-keep"]);
+  assert.equal(res.data.rackets.heavy, undefined);
+  await jack.call("POST", "/api/sync", { ops: [{ op: "racket.delete", id: "new-one" }] });
+});
+
+test("a body that isn't a list of changes is refused", async () => {
+  assert.equal((await jack.call("POST", "/api/sync", { ops: "nope" })).status, 400);
 });
 
 test("out-of-range values are refused", async () => {
   for (const data of [{ ...blade, head: 400 }, { ...blade, material: "rope" }, { ...blade, strungOn: "Oct 11" }, { ...blade, name: "" }]) {
-    assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "racket.put", id: "x", data }] })).status, 400);
+    const res = await jack.call("POST", "/api/sync", { ops: [{ op: "racket.put", id: "x", data }] });
+    assert.equal(res.data.refused.length, 1);
+    assert.equal(res.data.rackets.x, undefined);
   }
 });
 
@@ -144,7 +157,7 @@ test("bad play sessions are refused", async () => {
     { op: "play.add", id: "x1", racketId: "jk-blade", d: "yesterday", min: 60, kind: "singles" },
     { op: "play.add", id: "x2", racketId: "jk-blade", d: "2026-10-26", min: 0, kind: "singles" },
     { op: "play.add", id: "x3", racketId: "jk-blade", d: "2026-10-26", min: 60, kind: "pickleball" },
-  ]) assert.equal((await jack.call("POST", "/api/sync", { ops: [op] })).status, 400, op.id);
+  ]) assert.equal((await jack.call("POST", "/api/sync", { ops: [op] })).data.refused.length, 1, op.id);
 });
 
 test("each player has their own level and style", async () => {
@@ -154,8 +167,10 @@ test("each player has their own level and style", async () => {
   assert.deepEqual(res.data.profile, { level: "4.0", style: "heavy_spin" });
   res = await sam.call("POST", "/api/sync", { ops: [] });
   assert.deepEqual(res.data.profile, { level: null, style: null });
-  assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { level: "9.9" } }] })).status, 400);
-  assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { style: "moonball" } }] })).status, 400);
+  assert.equal((await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { level: "9.9" } }] })).data.refused.length, 1);
+  res = await jack.call("POST", "/api/sync", { ops: [{ op: "profile.put", data: { style: "moonball" } }] });
+  assert.equal(res.data.refused.length, 1);
+  assert.deepEqual(res.data.profile, { level: "4.0", style: "heavy_spin" });
 });
 
 test("the auth route refuses odd paths", async () => {

@@ -5,8 +5,9 @@ import { applyOps, claimUnowned, getState } from "../lib/store.js";
 import { ensureSchema } from "../lib/schema.js";
 import { json, readJson } from "../lib/http.js";
 
-// POST /api/sync  { ops: [...] }  ->  { user, rackets: {...} }
+// POST /api/sync  { ops: [...] }  ->  { user, rackets: {...}, profile, refused: [...] }
 // Applies the signed-in user's pending changes, then returns all of that user's rackets.
+// A malformed change is skipped and listed in `refused` rather than failing the others.
 // An empty ops list is a plain fetch.
 export async function POST(request) {
   const cookies = [];
@@ -21,9 +22,9 @@ export async function POST(request) {
     const store = db();
     await ensureSchema(store);
     await claimUnowned(store, user);
-    await applyOps(store, user.id, body.ops || []);
+    const refused = await applyOps(store, user.id, body.ops || [], { skipInvalid: true });
     const state = await getState(store, user.id);
-    return new Response(JSON.stringify({ user, ...state }), { status: 200, headers });
+    return new Response(JSON.stringify({ user, ...state, refused }), { status: 200, headers });
   } catch (e) {
     if (e.status) return json({ error: e.message }, e.status);
     console.error(e);
