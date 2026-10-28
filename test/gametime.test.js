@@ -70,6 +70,56 @@ test("GameTime's upcoming list becomes bookings, tennis only, without the member
   assert.equal(gt.parseUpcoming({ Response: { Total: 9, Results: UPCOMING.Response.Results } }).complete, false);
 });
 
+test("classes the member signed up for come in as lesson time; waitlist places don't", () => {
+  const feed = { Response: { Total: 2, Results: [
+    { type: "class", date: "Wednesday Nov 4, 2026", time: "6:00pm - 7:00pm", activity: "TENNIS 102 - WEDNESDAYS", place: "", event_instance_id: 13998 },
+    { type: "booking", status: "WAITLIST", date: "Thursday Nov 5, 2026", time: "6:00pm - 7:15pm", sport_id: 2, booking_id: 5, players: "JACKSON GUILLET" },
+  ] } };
+  const { bookings } = gt.parseUpcoming(feed, "JACKSON");
+  assert.equal(bookings.length, 1);
+  assert.equal(bookings[0].kind, "drills"); assert.equal(bookings[0].bkId, "13998"); assert.equal(bookings[0].minutes, 60);
+  assert.equal(bookings[0].note, "TENNIS 102 - WEDNESDAYS");
+});
+
+// Shaped like /cne/index/listdata?startDay=..&endDay=..&availType=AVAILABLE.
+const EVENTS = { Response: { Results: [
+  { event_instance_id: 1, title: { link: "/cne/event/view/instanceid/1", text: "CARDIO TENNIS WITH SCOTT &amp; LISA" }, year: "2026", month: "11", date: "3", hour: "13", minute: "30", duration: "1h 30m", participants: { text: "2/16" }, eventStatus: "Select", instructors: "MOORE, SCOTT (PRO)<br>MENTI, LISA (PRO)", cancelled: 0 },
+  { event_instance_id: 2, title: { text: "TENNIS 102 - WEDNESDAYS" }, year: "2026", month: "11", date: "4", hour: "18", minute: "0", duration: "1h", participants: { text: "8/8" }, eventStatus: "Full", cancelled: 0 },
+  { event_instance_id: 3, title: { text: "FALL - Green Ball 1 (Ages 9-12)" }, year: "2026", month: "11", date: "4", hour: "17", minute: "0", duration: "1h", participants: { text: "1/8" }, cancelled: 0 },
+  { event_instance_id: 4, title: { text: "MEN'S NIGHT" }, year: "2026", month: "11", date: "5", hour: "19", minute: "0", duration: "2h", participants: { text: "0/24" }, cancelled: 1 },
+] } };
+
+test("events: adult ones only, cancelled left out, spots and pros read", () => {
+  const ev = gt.parseEvents(EVENTS);
+  assert.deepEqual([...ev.map((e) => e.id)], ["1", "2"]);
+  assert.equal(ev[0].title, "CARDIO TENNIS WITH SCOTT & LISA");
+  assert.equal(ev[0].date, "2026-11-03"); assert.equal(ev[0].start, 810); assert.equal(ev[0].minutes, 90);
+  assert.equal(ev[0].spotsLeft, 14); assert.equal(ev[0].full, false); assert.equal(ev[0].pros, "MOORE, SCOTT (PRO), MENTI, LISA (PRO)");
+  assert.equal(ev[1].full, true); assert.equal(ev[1].spotsLeft, 0);
+  assert.equal(gt.parseEvents(EVENTS, { adultOnly: false }).length, 3);
+});
+
+// Shaped like GameTime's Available Partners list (note the double space in one div). Made-up people.
+const row = (name, phone, email, notes) => `<div class="row even">
+  <div class="name"><img src='/r/img/core/default.jpg'><div><label style="display: block;">${name}</label><label style="padding-top: 10px;"></label></div></div>
+  <div><p style="font-size: 15px;">${phone}</p><p style="font-size: 15px;">${email}<br></p></div>
+  <div  style="font-size: 15px;">${notes}</div>
+</div>`;
+const PARTNERS = `<div><span class="headTitle1">Available Partners</span></div><div id="availabilityTable">`
+  + row("PAT LEE", "(206) 5550101", "pat@example.com", "3.0/3.5 player, doubles or singles") + row("SAM KIM", "", "sam@example.com", "4.0 singles, mornings")
+  + row("ALEX P", "2065550199", "", "Weekdays after 4pm") + "</div>";
+
+test("partners: names, contact, level range and singles/doubles from the notes", () => {
+  const p = gt.parsePartners(PARTNERS);
+  assert.equal(p.length, 3);
+  assert.deepEqual({ ...p[0], level: [...p[0].level] }, { name: "PAT LEE", level: [3, 3.5], notes: "3.0/3.5 player, doubles or singles", email: "pat@example.com", phone: "(206) 5550101", singles: true, doubles: true });
+  assert.deepEqual([...p[1].level], [4, 4]); assert.equal(p[1].phone, null); assert.equal(p[1].doubles, false);
+  assert.equal(p[2].level, null); assert.equal(p[2].email, null);
+  assert.deepEqual([...gt.levelRange("2.5 to 3.0 doubles")], [2.5, 3]);
+  assert.deepEqual([...gt.levelRange("3-3.5 player")], [3, 3.5]);
+  assert.equal(gt.levelRange("available 5:45 AM"), null);
+});
+
 test("booking links go to GameTime's own form", () => {
   assert.equal(gt.bookUrl("11", "2026-10-29", 780), "/scheduling/index/book/sport/2/court/11/date/2026-10-29/time/780");
   assert.equal(gt.clock(780), "1 pm"); assert.equal(gt.clock(555), "9:15 am");

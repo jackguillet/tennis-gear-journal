@@ -6,6 +6,9 @@
 //   2. sends the member's own bookings (from GameTime's "upcoming" list, or the court sheets if
 //      that isn't available; never anyone else's) to Stringbed Meter, so they reach the
 //      app, the court calendar and the play log.
+//   3. lists clinics and events with open spots (sign-up stays on GameTime's event page), and
+//      members on GameTime's Available Partners list, filtered by level. The partner list is
+//      only shown on the page; it is never sent to Stringbed Meter or stored.
 // It never books, changes or cancels anything in GameTime. It is a classic script (not a module)
 // so it loads from another site without CORS. Tests load it in a sandbox and use SBM_GT.
 (function () {
@@ -69,7 +72,14 @@
   function parseUpcoming(feed, me) {
     const res = (feed && feed.Response) || {}, rows = res.Results || [], out = [];
     for (const r of rows) {
-      if (r.type !== "booking" || Number(r.sport_id) !== SPORT) continue;
+      // Court bookings for tennis, plus classes and events the member is registered for
+      // (logged as lesson / drills). Waitlist places and other sports are left out.
+      const isClass = r.type !== "booking";
+      if (/wait/i.test(String(r.status || "") + " " + String(r.type || ""))) continue;
+      if (!isClass && Number(r.sport_id) !== SPORT) continue;
+      if (isClass && r.sport_id && Number(r.sport_id) !== SPORT) continue;
+      const rid = String(r.booking_id || r.event_instance_id || r.instance_id || r.id || "");
+      if (!/^\d{1,12}$/.test(rid)) continue;
       const d = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s*(\d{4})/i.exec(r.date || "");
       const t = /(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/i.exec(r.time || "");
       if (!d || !t) continue;
@@ -79,17 +89,71 @@
       const mine = me ? players.findIndex((n) => n.toUpperCase().startsWith(me.toUpperCase() + " ")) : 0;
       const others = players.filter((_, i) => i !== (mine >= 0 ? mine : 0));
       out.push({
-        bkId: String(r.booking_id), ref: r.conf_id ? String(r.conf_id) : null,
+        bkId: rid, ref: r.conf_id ? String(r.conf_id) : null,
         date: `${d[3]}-${pad(MONTHS.indexOf(d[1].slice(0, 3).toLowerCase()) + 1)}-${pad(d[2])}`, time: hhmm(start), minutes,
-        court: r.place || null, kind: /lesson|clinic/i.test(r.activity || "") ? "drills" : players.length >= 3 ? "doubles" : "singles",
-        note: others.length ? ("With " + others.join(", ")).slice(0, 200) : null,
+        court: decode(r.place) || null, kind: isClass || /lesson|clinic/i.test(r.activity || "") ? "drills" : players.length >= 3 ? "doubles" : "singles",
+        note: isClass ? (decode(r.activity || r.title) || null) : others.length ? ("With " + others.join(", ")).slice(0, 200) : null,
       });
     }
     return { bookings: out, complete: Number(res.Total || 0) <= rows.length };
   }
   const upcomingUrl = "/account/jsonlistupcoming?wltext=1&family=member&limit=50&order=asc";
 
-  globalThis.SBM_GT = { openSlots, myBookings, parseUpcoming, upcomingUrl, bookUrl, sheetUrl, clock, hhmm };
+  const decode = (t) => String(t == null ? "" : t).replace(/<br\s*\/?>/gi, ", ").replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&#0?39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ").replace(/(,\s*)+$/, "").trim();
+  const YOUTH = /\bages?\b|\b(red|orange|green|yellow) ball\b|junior|tiny tots|youth|\bkids?\b|parent\s*\/\s*child|high school/i;
+
+  // Classes and events (clinics, round robins, Men's and Women's Night...) from GameTime's
+  // classes list for a date range. Registration itself stays on GameTime's event page.
+  const eventsUrl = (from, to) => `/cne/index/listdata?startDay=${from}&endDay=${to}&availType=AVAILABLE`;
+  function parseEvents(feed, { adultOnly = true } = {}) {
+    const rows = (feed && feed.Response && feed.Response.Results) || [], out = [];
+    for (const r of rows) {
+      if (Number(r.cancelled) === 1 || !r.year || !r.month || !r.date) continue;
+      const title = decode(r.title && r.title.text);
+      if (!title || (adultOnly && YOUTH.test(title))) continue;
+      const dur = /(?:(\d+)\s*h)?\s*(?:(\d+)\s*m)?/.exec(String(r.duration || "")) || [];
+      const [taken, cap] = String((r.participants && r.participants.text) || "").split("/").map((x) => parseInt(x, 10));
+      out.push({
+        id: String(r.event_instance_id || r.row_id), title, date: `${r.year}-${pad(+r.month)}-${pad(+r.date)}`,
+        start: (+r.hour || 0) * 60 + (+r.minute || 0), minutes: (+dur[1] || 0) * 60 + (+dur[2] || 0) || null,
+        link: (r.title && r.title.link) || (r.availability && r.availability.link) || null,
+        full: /full/i.test(String(r.eventStatus || "") + " " + String((r.availability && r.availability.text) || "")),
+        spotsLeft: Number.isFinite(cap) && Number.isFinite(taken) ? Math.max(0, cap - taken) : null, cap: Number.isFinite(cap) ? cap : null,
+        pros: decode(r.instructors) || null, place: decode(r.place) || null,
+      });
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start || a.title.localeCompare(b.title));
+  }
+
+  // Members who opted in to GameTime's "Available Partners" list. This stays in the member's
+  // browser: it is shown in the panel and never sent anywhere.
+  const partnersUrl = `/scheduling/gameseeker/rosteravailable/sport/${SPORT}`;
+  function levelRange(text) {
+    const t = String(text || "");
+    const m = /\b([1-6](?:\.[05])?)\s*(?:-|\/|to|or)\s*([1-6](?:\.[05])?)\b/.exec(t) || /\b([1-6]\.[05])\b/.exec(t);
+    if (!m) return null;
+    const lo = parseFloat(m[1]), hi = parseFloat(m[2] || m[1]);
+    return lo >= 1 && hi <= 7 ? [Math.min(lo, hi), Math.max(lo, hi)] : null;
+  }
+  function parsePartners(html) {
+    const out = [];
+    for (const chunk of String(html || "").split(/<div class="row (?:even|odd)">/).slice(1)) {
+      const labels = [...chunk.matchAll(/<label[^>]*>([\s\S]*?)<\/label>/g)].map((m) => decode(m[1]));
+      const ps = [...chunk.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((m) => decode(m[1]));
+      const divs = [...chunk.matchAll(/<div\s+style="font-size:\s*15px;?">([\s\S]*?)<\/div>/g)].map((m) => decode(m[1]));
+      const name = labels[0];
+      if (!name) continue;
+      const notes = divs.length ? divs[divs.length - 1] : "";
+      const email = ps.find((p) => /@/.test(p)) || null, phone = ps.find((p) => /\d{3}.*\d{4}/.test(p) && !/@/.test(p)) || null;
+      const level = levelRange((labels[1] || "") + " " + notes);
+      out.push({ name, level, notes: notes || null, email, phone, singles: /single/i.test(notes), doubles: /double/i.test(notes) });
+    }
+    return out;
+  }
+
+  globalThis.SBM_GT = { openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, upcomingUrl, eventsUrl, partnersUrl, bookUrl, sheetUrl, clock, hhmm };
 
   // ---------- the panel (only on GameTime, launched from the bookmark) ----------
   const cfg = typeof window !== "undefined" ? window.__sbmGT : null;
@@ -139,15 +203,43 @@
     .slot { border: 1px solid #d5dce4; border-radius: 8px; padding: 6px 10px; text-decoration: none; color: #1d4f7c; font-weight: 600; font-size: 15px; }
     .muted { color: #5b6b7c; font-size: 14px; } .err { color: #b42318; font-size: 14px; }
     ul { list-style: none; margin: 0; padding: 0; } li { padding: 6px 0; border-top: 1px solid rgba(128,128,128,.25); font-size: 15px; }
+    .tabs { display: flex; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid rgba(128,128,128,.3); }
+    .tab { border: 0; background: none; color: inherit; font: 600 15px system-ui, sans-serif; padding: 8px 12px; cursor: pointer; border-bottom: 3px solid transparent; }
+    .tab[aria-selected="true"] { border-bottom-color: #1d4f7c; color: #1d4f7c; }
+    .item { padding: 10px 0; border-top: 1px solid rgba(128,128,128,.25); }
+    .item a.title { color: #1d4f7c; font-weight: 600; text-decoration: none; } .item .meta { font-size: 14px; color: #5b6b7c; margin-top: 2px; }
+    .tag { display: inline-block; font: 600 11px system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; padding: 2px 7px; border-radius: 999px; background: #e7f3ec; color: #2e7d4f; margin-left: 6px; }
+    .tag.full { background: #f3e8e7; color: #b42318; }
+    .contact a { color: #1d4f7c; margin-right: 12px; font-size: 14px; }
+    input[type=search] { width: 100%; box-sizing: border-box; font: 16px system-ui, sans-serif; padding: 8px 10px; border: 1px solid #d5dce4; border-radius: 8px; margin: 8px 0; background: transparent; color: inherit; }
   </style>
-  <div class="wrap"><div class="panel" role="dialog" aria-label="Open courts">
-    <header><h1>Open courts</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
-    <p class="muted">Tap a court to open GameTime's booking form for it.</p>
-    <div class="row" id="days"></div>
-    <div class="row" id="groups" style="margin-top:8px"></div>
-    <div id="slots"><p class="muted">Loading\u2026</p></div>
-    <h2>Your bookings</h2>
-    <div id="mine"><p class="muted">Looking through the next ${DAYS_AHEAD} days\u2026</p></div>
+  <div class="wrap"><div class="panel" role="dialog" aria-label="Stringbed Meter for GameTime">
+    <header><h1>Seattle Tennis Club</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
+    <div class="tabs" role="tablist">
+      <button class="tab" role="tab" data-tab="courts" aria-selected="true">Courts</button>
+      <button class="tab" role="tab" data-tab="events" aria-selected="false">Clinics & events</button>
+      <button class="tab" role="tab" data-tab="partners" aria-selected="false">Partners</button>
+    </div>
+    <section id="tab-courts">
+      <p class="muted">Tap a court to open GameTime's booking form for it.</p>
+      <div class="row" id="days"></div>
+      <div class="row" id="groups" style="margin-top:8px"></div>
+      <div id="slots"><p class="muted">Loading\u2026</p></div>
+      <h2>Your bookings</h2>
+      <div id="mine"><p class="muted">Loading your bookings\u2026</p></div>
+    </section>
+    <section id="tab-events" hidden>
+      <p class="muted">Adult clinics, round robins and club nights for the next four weeks. Tap one to see it and sign up on GameTime.</p>
+      <div class="row" id="ev-filter"></div>
+      <div id="events"><p class="muted">Loading\u2026</p></div>
+    </section>
+    <section id="tab-partners" hidden>
+      <p class="muted">Members on GameTime's Available Partners list. This list stays on this page; Stringbed Meter doesn't keep it.</p>
+      <div class="row" id="pt-level"></div>
+      <div class="row" id="pt-type" style="margin-top:8px"></div>
+      <input type="search" id="pt-q" placeholder="Search names and notes (e.g. mornings, clay)">
+      <div id="partners"><p class="muted">Loading\u2026</p></div>
+    </section>
   </div></div>`;
   document.body.appendChild(host);
   const $ = (id) => root.getElementById(id);
@@ -244,6 +336,76 @@
       note.textContent = out.message || "Saved to Stringbed Meter and your court calendar.";
     } catch (e) { note.className = "err"; note.textContent = "Couldn't reach Stringbed Meter: " + e.message; }
   }
+
+  // ---------- tabs ----------
+  const loaded = {};
+  root.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
+    root.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", String(x === t)));
+    for (const name of ["courts", "events", "partners"]) $("tab-" + name).hidden = name !== t.dataset.tab;
+    if (!loaded[t.dataset.tab]) { loaded[t.dataset.tab] = true; if (t.dataset.tab === "events") loadEvents(); if (t.dataset.tab === "partners") loadPartners(); }
+  });
+  const getJSON = async (url) => { const r = await fetch(url, { credentials: "same-origin", headers: { accept: "application/json" } }); if (!r.ok) throw new Error("GameTime said " + r.status); return r.json(); };
+  const pref = (k, d) => { try { return localStorage.getItem("sbm-gt-" + k) ?? d; } catch { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem("sbm-gt-" + k, v); } catch {} };
+
+  // ---------- clinics & events ----------
+  let events = [], evOpenOnly = pref("ev-open", "1") === "1";
+  async function loadEvents() {
+    try { events = parseEvents(await getJSON(eventsUrl(today, addDays(today, 28)))).filter((e) => e.date >= today); renderEvents(); }
+    catch { $("events").innerHTML = '<p class="err">Couldn\'t load classes and events from GameTime.</p>'; }
+  }
+  function renderEvents() {
+    chips($("ev-filter"), [["1", "Open spots"], ["0", "Everything"]], (v) => (v === "1") === evOpenOnly, (v) => { evOpenOnly = v === "1"; setPref("ev-open", v); renderEvents(); });
+    const box = $("events"); box.textContent = "";
+    const list = events.filter((e) => !evOpenOnly || !e.full);
+    if (!list.length) { box.innerHTML = '<p class="muted">Nothing in the next four weeks' + (evOpenOnly ? " with open spots" : "") + ".</p>"; return; }
+    let lastDay = "";
+    for (const e of list) {
+      if (e.date !== lastDay) { const h = document.createElement("h2"); h.textContent = dayName(e.date, days.indexOf(e.date)); box.appendChild(h); lastDay = e.date; }
+      const div = document.createElement("div"); div.className = "item";
+      const a = document.createElement("a"); a.className = "title"; a.textContent = e.title; if (e.link) a.href = e.link;
+      const tag = document.createElement("span"); tag.className = "tag" + (e.full ? " full" : "");
+      tag.textContent = e.full ? "Full" : e.spotsLeft != null ? e.spotsLeft + (e.spotsLeft === 1 ? " spot" : " spots") : "Open";
+      const meta = document.createElement("div"); meta.className = "meta";
+      meta.textContent = [clock(e.start) + (e.minutes ? "–" + clock(e.start + e.minutes) : ""), e.pros, e.place].filter(Boolean).join(" · ");
+      div.append(a, tag, meta); box.appendChild(div);
+    }
+  }
+
+  // ---------- partners ----------
+  let partners = [], ptLevel = pref("pt-level", "any"), ptType = pref("pt-type", "any");
+  const LEVELS = [["any", "Any level"], ["3.0", "3.0"], ["3.5", "3.5"], ["4.0", "4.0"], ["4.5", "4.5"], ["5.0", "5.0+"]];
+  async function loadPartners() {
+    try {
+      const r = await fetch(partnersUrl, { credentials: "same-origin" });
+      if (!r.ok) throw new Error(String(r.status));
+      partners = parsePartners(await r.text()); renderPartners();
+    } catch { $("partners").innerHTML = '<p class="err">Couldn\'t load the partner list from GameTime.</p>'; }
+  }
+  function renderPartners() {
+    chips($("pt-level"), LEVELS, (v) => v === ptLevel, (v) => { ptLevel = v; setPref("pt-level", v); renderPartners(); });
+    chips($("pt-type"), [["any", "Singles or doubles"], ["singles", "Mentions singles"], ["doubles", "Mentions doubles"]], (v) => v === ptType, (v) => { ptType = v; setPref("pt-type", v); renderPartners(); });
+    const q = $("pt-q").value.trim().toLowerCase(), want = ptLevel === "any" ? null : parseFloat(ptLevel);
+    const list = partners.filter((p) =>
+      (want == null || (p.level && (want >= 5 ? p.level[1] >= 5 : p.level[0] <= want && p.level[1] >= want))) &&
+      (ptType === "any" || p[ptType]) &&
+      (!q || (p.name + " " + (p.notes || "")).toLowerCase().includes(q)));
+    const box = $("partners"); box.textContent = "";
+    const n = document.createElement("p"); n.className = "muted"; n.textContent = list.length + " of " + partners.length + " members" + (want != null ? " (only those who list a level)" : ""); box.appendChild(n);
+    for (const p of list) {
+      const div = document.createElement("div"); div.className = "item";
+      const b = document.createElement("b"); b.textContent = p.name.replace(/\b([A-Z])([A-Z']+)/g, (_, a, r) => a + r.toLowerCase());
+      if (p.level) { const t = document.createElement("span"); t.className = "tag"; t.textContent = p.level[0] === p.level[1] ? p.level[0].toFixed(1) : p.level[0].toFixed(1) + "–" + p.level[1].toFixed(1); b.appendChild(t); }
+      div.appendChild(b);
+      if (p.notes) { const m = document.createElement("div"); m.className = "meta"; m.textContent = p.notes; div.appendChild(m); }
+      const c = document.createElement("div"); c.className = "contact";
+      if (p.email) { const a = document.createElement("a"); a.href = "mailto:" + p.email; a.textContent = "Email"; c.appendChild(a); }
+      if (p.phone) { const digits = p.phone.replace(/[^\d+]/g, ""); const a = document.createElement("a"); a.href = "sms:" + digits; a.textContent = "Text"; const t = document.createElement("a"); t.href = "tel:" + digits; t.textContent = "Call"; c.append(a, t); }
+      if (c.childNodes.length) div.appendChild(c);
+      box.appendChild(div);
+    }
+  }
+  $("pt-q").addEventListener("input", () => renderPartners());
 
   renderChips(); renderSlots(); scanMine();
 })();
