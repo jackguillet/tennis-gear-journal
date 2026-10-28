@@ -163,10 +163,13 @@ a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 ul.factors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
 ul.factors li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; }
 ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: right; }
+.toast { position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(528px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 10px 10px 10px 16px; font-size: 15px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+.toast button { border: 0; background: transparent; color: var(--optic); font: 700 15px var(--f-body); padding: 10px 12px; min-height: 44px; cursor: pointer; text-transform: uppercase; letter-spacing: .05em; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
+<div class="toast" id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-undo">Undo</button></div>
 <div class="wrap">
   <header>
     <div class="title-row"><h1>Stringbed Meter</h1><span class="chip" id="sync-chip" hidden></span></div>
@@ -215,10 +218,14 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     <div class="restring-head"><h2 id="h-restring">Restring</h2><span class="chip" id="rs-chip"></span></div>
     <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
     <div id="rs-line"></div>
+    <div class="row-btns">
+      <button class="btn" id="rs-broke" type="button">Strings broke</button>
+      <button class="btn" id="rs-quick" type="button">Record a restring</button>
+    </div>
     <details>
       <summary class="small">What this is based on</summary>
       <ul class="factors" id="rs-factors"></ul>
-      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate.</p>
+      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate. Each time you press Strings broke, the break estimate moves toward how long strings really last for you.</p>
     </details>
   </section>
 
@@ -411,6 +418,14 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
         </select>
       </div>
     </div>
+    <h2>Restring reminders</h2>
+    <p class="small" id="push-text">Get a notification on this phone when a racket's strings are due: once at Restring soon and once at Restring now. The check runs every morning.</p>
+    <div class="row-btns">
+      <button class="btn" id="push-on" type="button">Turn on reminders</button>
+      <button class="btn" id="push-test" type="button" hidden>Send a test</button>
+      <button class="btn" id="push-off" type="button" hidden>Turn off on this phone</button>
+    </div>
+    <p class="small err-text" id="push-err" hidden></p>
     <h2>Chat assistant</h2>
     <p class="small">Log play by chatting, for example "I played an hour of singles". Make a private link, then in Claude open Settings, then Connectors, then Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your rackets, so keep it to yourself.</p>
     <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
@@ -445,9 +460,9 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
 
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
-import { restringAdvice } from "./restring.js";
+import { restringAdvice, personalBreak } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.js";
-import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringjobs.js";
+import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings } from "./stringjobs.js";
 (() => {
   "use strict";
   // ---------- state & storage ----------
@@ -491,7 +506,25 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
       : op.op === "profile.put" ? outbox.findIndex(o => o.op === "profile.put") : -1;
     if (i >= 0) outbox[i] = op; else outbox.push(op);
     localSave(); syncSoon();
+    return op;
   }
+  // ---------- undo ----------
+  // Every delete shows an Undo bar for a few seconds. Undo takes the delete back out of the queue if it
+  // hasn't been sent yet and also re-sends the things it removed (safe to send twice), so it works
+  // whether or not the delete already reached the server.
+  let undoTimer = null, undoFn = null;
+  function offerUndo(msg, fn) {
+    $("toast-msg").textContent = msg; $("toast").hidden = false; undoFn = fn;
+    clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 8000);
+  }
+  function hideUndo() { $("toast").hidden = true; undoFn = null; }
+  function undoDelete(deletes, readds) {
+    outbox = outbox.filter(o => !deletes.includes(o));
+    readds.forEach(o => queue(o));
+  }
+  const readingOp = (racketId, x) => ({ op: "reading.add", id: x.id, racketId, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) });
+  const playOp = (racketId, p) => ({ op: "play.add", id: p.id, racketId, d: p.d, min: p.min, kind: p.kind });
+  const jobOp = (racketId, j) => ({ op: "job.add", racketId, ...j });
   function persist(id) { const r = rackets[id]; if (r) queue({ op: "racket.put", id, data: racketData(r) }); }
   function removeStored(id) { queue({ op: "racket.delete", id }); }
   function addReading(id, x) {
@@ -501,7 +534,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   }
   function removeReading(id, x) {
     const r = rackets[id]; r.readings = r.readings.filter(y => y !== x);
-    if (x.id) queue({ op: "reading.delete", id: x.id }); else localSave();
+    if (!x.id) { localSave(); return; }
+    const del = queue({ op: "reading.delete", id: x.id });
+    offerUndo("Reading removed.", () => {
+      if (!rackets[id]) return;
+      rackets[id].readings.push(x); undoDelete([del], [readingOp(id, x)]); renderHistory();
+    });
   }
   function addPlay(id, p) {
     const r = rackets[id]; p.id = p.id || uid(); (r.plays = r.plays || []).push(p);
@@ -510,7 +548,19 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   }
   function removePlay(id, p) {
     const r = rackets[id]; r.plays = (r.plays || []).filter(y => y !== p);
-    queue({ op: "play.delete", id: p.id });
+    const del = queue({ op: "play.delete", id: p.id });
+    offerUndo("Session removed.", () => {
+      if (!rackets[id]) return;
+      (rackets[id].plays = rackets[id].plays || []).push(p); undoDelete([del], [playOp(id, p)]); renderPlays(); renderSettings();
+    });
+  }
+  function removeJob(id, j) {
+    const r = rackets[id]; r.jobs = (r.jobs || []).filter(y => y !== j);
+    const del = queue({ op: "job.delete", id: j.id });
+    offerUndo("Strings removed from the history.", () => {
+      if (!rackets[id]) return;
+      (rackets[id].jobs = rackets[id].jobs || []).push(j); undoDelete([del], [jobOp(id, j)]); renderJobs(); renderRestring();
+    });
   }
   function addJob(id, j) {
     const r = rackets[id]; j.id = j.id || uid(); (r.jobs = r.jobs || []).push(j);
@@ -704,7 +754,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   const today = () => new Date().toLocaleDateString("en-CA");
   const hrs = min => { const h = min / 60; return (Math.round(h * 10) / 10).toString(); };
   // Sessions on the current strings: on or after the day they were strung (all of them if no date is set).
-  const onTheseStrings = r => (r.plays || []).filter(p => !r.strungOn || p.d >= r.strungOn);
+  const onTheseStrings = r => onCurrentStrings(r);
   function buildPicks() {
     const add = (box, name, items, sel) => items.forEach(([v, label]) => {
       const l = document.createElement("label"), i = document.createElement("input"), sp = document.createElement("span");
@@ -722,7 +772,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
     $("hours-num").firstChild.nodeValue = hrs(total);
     const since = r.strungOn ? new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
     $("hours-line").textContent = (mine.length ? mine.length + (mine.length === 1 ? " session" : " sessions") : "No sessions yet")
-      + (since ? " since these strings went in on " + since + "." : ". Set Strung on below so the count restarts when you restring.");
+      + (since ? " since these strings went in on " + since + "." : (r.jobs || []).length ? ". Record a restring when new strings go in to start counting them." : ". Set Strung on below so the count restarts when you restring.");
     const by = {}; mine.forEach(p => { by[p.kind] = (by[p.kind] || 0) + p.min; });
     const parts = KINDS.filter(([k]) => by[k]).map(([k, n]) => n + " " + hrs(by[k]) + " h");
     $("hours-split").hidden = parts.length < 2; $("hours-split").textContent = parts.join(" · ");
@@ -748,7 +798,16 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
 
   function renderRestring() {
     const r = R(); $("restring").hidden = !r; if (!r) return;
-    const a = restringAdvice(r, profile, today());
+    const a = restringAdvice(r, profile, today(), personalBreak(rackets, profile));
+    const lastJob = (r.jobs || []).slice().sort((x, y) => x.to.localeCompare(y.to)).pop();
+    const broken = !r.strungOn && lastJob && lastJob.reason === "broke";
+    $("rs-broke").hidden = !r.strungOn;
+    if (broken) {
+      const when = new Date(lastJob.to + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      $("rs-chip").textContent = "Broken"; $("rs-chip").className = "chip bad"; $("rs-bar").hidden = true; $("rs-factors").textContent = "";
+      $("rs-line").textContent = "Strings broke on " + when + " after " + hrs(minutesBetween(r.plays, lastJob.from, lastJob.to)) + " h of play. Press Record a restring when they're replaced.";
+      return;
+    }
     const chip = $("rs-chip"); chip.textContent = a.label;
     chip.className = "chip " + ({ good: "good", soon: "warn", now: "bad" }[a.status] || "");
     const bar = $("rs-bar"); bar.className = "wear " + a.status; bar.hidden = a.status === "unknown";
@@ -772,7 +831,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
       li.append(t, k);
       if (j) {
         const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove these strings from the history");
-        del.onclick = () => { if (!confirm("Remove these strings from the history?")) return; r.jobs = r.jobs.filter(y => y !== j); queue({ op: "job.delete", id: j.id }); renderJobs(); };
+        del.onclick = () => { removeJob(current, j); renderJobs(); renderRestring(); };
         li.append(del);
       } else li.append(document.createElement("span"));
       list.appendChild(li);
@@ -1062,7 +1121,15 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   $("del-no").onclick = () => { $("del-confirm").hidden = true; };
   $("del-yes").onclick = () => {
     $("del-confirm").hidden = true;
-    delete rackets[current]; removeStored(current);
+    const id = current, gone = rackets[id], madeBlank = Object.keys(rackets).length === 1;
+    delete rackets[id];
+    const del = queue({ op: "racket.delete", id });
+    offerUndo(gone.name + " deleted.", () => {
+      if (madeBlank) Object.keys(rackets).forEach(k => { const b = rackets[k]; if (!b.readings.length && !(b.plays || []).length && !outbox.some(o => o.id === k)) delete rackets[k]; });
+      rackets[id] = gone; current = id; prefs.racket = id; savePrefs();
+      undoDelete([del], [{ op: "racket.put", id, data: racketData(gone) }, ...gone.readings.map(x => readingOp(id, x)), ...(gone.plays || []).map(p => playOp(id, p)), ...(gone.jobs || []).map(j => jobOp(id, j))]);
+      renderAll();
+    });
     if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
     current = Object.keys(rackets)[0]; localSave(); renderAll();
   };
@@ -1091,11 +1158,27 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
   const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); renderJobs(); };
   // ---------- restring ----------
+  $("rs-broke").onclick = () => {
+    const r = R(), id = current; if (!r || !r.strungOn) return;
+    const d = today() < r.strungOn ? r.strungOn : today();
+    const job = currentJob(r, uid(), d, "broke"), was = r.strungOn;
+    addJob(id, job);
+    // No strings in it until the restring is recorded, so the next restring doesn't save this set twice.
+    r.strungOn = null; persist(id); renderAll();
+    offerUndo("Marked " + r.name + "'s strings as broken.", () => {
+      const k = rackets[id]; if (!k) return;
+      k.jobs = (k.jobs || []).filter(j => j !== job); k.strungOn = was;
+      outbox = outbox.filter(o => !(o.op === "job.add" && o.id === job.id));
+      queue({ op: "job.delete", id: job.id }); persist(id); renderAll();
+    });
+  };
+  $("rs-quick").onclick = () => { $("rs-new").click(); };
   $("rs-new").onclick = () => {
     const r = R(); if (!r) return;
     $("rs-day").value = today(); $("rs-day").max = today();
     $("rs-name").value = r.stringName || ""; $("rs-gauge").value = r.gauge; $("rs-mat").value = r.material;
     $("rs-kg-label").textContent = "Tension (" + unit + ")"; $("rs-kg").value = r.strungKg ? fmt(r.strungKg) : "";
+    $("rs-why").hidden = !r.strungOn; // after Strings broke there is nothing in the racket to save
     $("rs-err").hidden = true; $("rs-form").hidden = false; $("rs-new").hidden = true;
     $("rs-form").scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
@@ -1112,6 +1195,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
     const g = parseFloat($("rs-gauge").value);
     if (!(g >= 1.05 && g <= 1.45)) return err("Gauge should be between 1.05 and 1.45 mm.");
     const why = (document.querySelector('input[name="rs-why"]:checked') || {}).value || "routine";
+    hideUndo();
     // The strings coming out go to the history (unless this corrects a restring made the same day).
     const job = r.strungOn !== d ? currentJob(r, uid(), d, why) : null;
     if (job) addJob(current, job);
@@ -1120,6 +1204,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
     setStatus((job ? "Saved the old strings to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "") + "Tap the new strings now and press Calibrate on last tap for the best readings.");
     $("status").scrollIntoView({ block: "center", behavior: "smooth" });
   });
+  $("toast-undo").onclick = () => { const f = undoFn; hideUndo(); if (f) f(); };
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawSpectrum(); drawTrend(); }, 100); });
@@ -1270,7 +1355,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
       user = next; lsSet("sbm-user", user);
       $("acct-pass").value = ""; setMode(false);
       start();
-      loadTokens();
+      loadTokens(); renderPush();
       setStatus(wasCreating ? "Welcome, " + (user.name || user.email) + ". Add your first racket below." : "Signed in as " + (user.name || user.email) + ".");
     } catch (e2) { err.textContent = e2 && e2.message && mode !== "signin" && mode !== "create" ? e2.message : "Can't reach the server. Check your connection and try again."; err.hidden = false; }
     finally { go.disabled = false; }
@@ -1284,6 +1369,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
   }
   $("signout").onclick = async () => {
     if (outbox.length && !confirm(outbox.length + " changes haven't synced yet and will be lost from this device. Sign out anyway?")) return;
+    // Reminders on this phone belong to the player signing out.
+    try { const reg = pushSupported() && await navigator.serviceWorker.ready, sub = reg && await reg.pushManager.getSubscription(); if (sub) { await pushCall("DELETE", { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch {}
     try { await authCall("sign-out", {}); } catch {}
     try { ["rackets", "outbox", "last-sync", "refused", "profile"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
     user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
@@ -1292,6 +1379,59 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringj
     $("acct-email").value = "";
     renderSync();
   };
+
+  // ---------- restring reminders (Web Push) ----------
+  const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window && canSync() && location.protocol === "https:";
+  function pushErr(m) { $("push-err").textContent = m || ""; $("push-err").hidden = !m; }
+  async function pushCall(method, body) {
+    const res = await fetch("api/push", { method, credentials: "same-origin", headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "That didn't work. Try again.");
+    return data;
+  }
+  const b64ToBytes = b => { const p = "=".repeat((4 - b.length % 4) % 4), raw = atob((b + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, c => c.charCodeAt(0)); };
+  async function renderPush() {
+    if (!user) return;
+    if (!pushSupported()) {
+      const iphone = /iPhone|iPad/.test(navigator.userAgent) && !navigator.standalone;
+      $("push-text").textContent = iphone
+        ? "To get reminders on iPhone, add this app to your Home Screen (Share, then Add to Home Screen) and open it from there."
+        : "This browser can't show notifications from the app.";
+      $("push-on").hidden = true; return;
+    }
+    let sub = null;
+    try { const reg = await navigator.serviceWorker.ready; sub = await reg.pushManager.getSubscription(); } catch {}
+    const on = !!sub && Notification.permission === "granted";
+    $("push-on").hidden = on; $("push-test").hidden = !on; $("push-off").hidden = !on;
+    if (Notification.permission === "denied") $("push-text").textContent = "Notifications are blocked for this app. Turn them on in Settings, then Notifications, then Stringbed.";
+    else $("push-text").textContent = on ? "Reminders are on for this phone: one at Restring soon and one at Restring now, checked every morning." : "Get a notification on this phone when a racket's strings are due: once at Restring soon and once at Restring now. The check runs every morning.";
+  }
+  $("push-on").onclick = async () => {
+    pushErr(""); $("push-on").disabled = true;
+    try {
+      // iPhone only asks for permission from a tap, so this runs straight from the button.
+      if (await Notification.requestPermission() !== "granted") { pushErr("Notifications weren't allowed. You can turn them on later in Settings, then Notifications."); return; }
+      const { publicKey } = await pushCall("GET");
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(publicKey) });
+      await pushCall("POST", { subscription: sub.toJSON(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone });
+      await pushCall("POST", { test: true });
+    } catch (e) { pushErr(navigator.onLine ? e.message : "You're offline. Connect to turn reminders on."); }
+    finally { $("push-on").disabled = false; renderPush(); }
+  };
+  $("push-test").onclick = async () => {
+    pushErr("");
+    try { const { sent } = await pushCall("POST", { test: true }); if (!sent) pushErr("No phone got it. Turn reminders off and on again."); } catch (e) { pushErr(e.message); }
+  };
+  $("push-off").onclick = async () => {
+    pushErr("");
+    try {
+      const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription();
+      if (sub) { await pushCall("DELETE", { endpoint: sub.endpoint }); await sub.unsubscribe(); }
+    } catch (e) { pushErr(e.message); }
+    renderPush();
+  };
+  setTimeout(renderPush, 1200);
 
   // ---------- chat assistant links ----------
   async function tokensCall(method, body) {

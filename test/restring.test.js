@@ -75,3 +75,27 @@ test("no strung date and no play gives no estimate", () => {
   const a = restringAdvice(racket({ strungOn: null }), {}, TODAY);
   assert.equal(a.status, "unknown");
 });
+
+test("your own breaks move the break estimate toward your record", async () => {
+  const { personalBreak, restringAdvice, lifeHours } = await import("../public/restring.js");
+  const base = { head: 98, gauge: 1.25, material: "poly", pattern: "16x19", strungKg: 23, readings: [] };
+  const profile = { level: "4.0", style: "heavy_spin" };
+  const expected = lifeHours(base, profile).break;
+  assert.deepEqual(personalBreak({ a: { ...base, plays: [], jobs: [] } }, profile), { factor: 1, breaks: 0 });
+  // Two sets that broke after a quarter of the expected hours (singles counts 1:1).
+  const min = Math.round(expected * 60 / 4);
+  const plays = [{ d: "2026-09-02", min, kind: "singles" }, { d: "2026-09-12", min, kind: "singles" }];
+  const jobs = [
+    { from: "2026-09-01", to: "2026-09-10", reason: "broke", material: "poly", gauge: 1.25, strungKg: 23 },
+    { from: "2026-09-10", to: "2026-09-20", reason: "broke", material: "poly", gauge: 1.25, strungKg: 23 },
+    { from: "2026-08-01", to: "2026-09-01", reason: "dead", material: "poly", gauge: 1.25, strungKg: 23 }, // not a break
+  ];
+  const p = personalBreak({ a: { ...base, plays, jobs } }, profile);
+  assert.equal(p.breaks, 2);
+  assert.ok(Math.abs(p.factor - Math.pow(0.25, 2 / 3)) < 0.01, String(p.factor)); // shrunk toward 1: (1 x 0.25 x 0.25)^(1/3)
+  const r = { ...base, strungOn: "2026-10-01", plays: [], jobs };
+  const mine = restringAdvice(r, profile, "2026-10-02", p), plain = restringAdvice(r, profile, "2026-10-02");
+  assert.ok(Math.abs(mine.expected_hours.break / plain.expected_hours.break - p.factor) < 0.01);
+  assert.match(mine.factors.find((f) => f.factor === "break").note, /from your 2 logged breaks/);
+  assert.equal(personalBreak({ a: { ...base, plays: [], jobs: [jobs[0]] } }, profile).breaks, 0, "a break with no play logged teaches nothing");
+});

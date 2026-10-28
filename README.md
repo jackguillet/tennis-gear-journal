@@ -47,6 +47,16 @@ Hours are weighted by type of play (drills and ball machine count more than doub
 
 Press **Record a restring** in the Racket section each time a racket is restrung. The strings coming out are saved to **String history** with the dates, string, gauge, tension, the hours played on them and why they came out (broke, went dead or a routine restring); the racket takes the new strings and its hours start again from zero. **By string** compares every string you have used across all rackets: average hours it lasted and how often it broke. The chat connector's `record_restring` does the same (with `old_strings`), and `string_history` answers "which string lasts longest for me?". Shared code: `public/stringjobs.js`.
 
+**Strings broke** on the Restring card saves the set as broken in one tap and marks the racket as waiting for a restring (the chat tool `strings_broke` does the same). Every break you log teaches the restring estimate: its break hours move from the textbook figure toward how long strings actually last for you (`personalBreak` in `public/restring.js`).
+
+## Restring reminders
+
+Under **Restring reminders** in the Racket section, turn on notifications for the phone. Every morning (a Vercel cron at 17:00 UTC calls `/api/reminders`) each racket is checked, and you get one notification when it reaches *Restring soon* and one at *Restring now*, per set of strings. On iPhone this needs the app added to the Home Screen (iOS 16.4 or later). The Web Push keys are made on first use and kept in the database (or set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`). Set `CRON_SECRET` in Vercel so only its cron can start the check. Code: `lib/push.js`, `api/push.js`, `api/reminders.js`, and the `push` handler in `public/sw.js`.
+
+## Undo
+
+Removing a reading, a session, a string-history entry or a whole racket shows an **Undo** bar for 8 seconds.
+
 ## Log play by chatting (Claude and other assistants)
 
 The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "should I restring the v8?", "I restrung the v8 today at 52 lb".

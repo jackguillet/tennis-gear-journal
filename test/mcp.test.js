@@ -79,7 +79,7 @@ test("MCP handshake and tool list", async () => {
   const note = await fetch(link, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
   assert.equal(note.status, 202);
   const list = await mcp(link, "tools/list");
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["add_court_booking", "cancel_court_booking", "delete_session", "list_court_bookings", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile", "string_history"]);
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["add_court_booking", "cancel_court_booking", "delete_session", "list_court_bookings", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile", "string_history", "strings_broke"]);
   assert.equal((await fetch(link)).status, 405);
 });
 
@@ -150,8 +150,12 @@ test("a restring saves the old strings to the history, and string_history compar
   const rpm = by_string.find((s) => s.string.startsWith("RPM Blast"));
   assert.deepEqual([rpm.jobs, rpm.avgHours, rpm.broke], [1, 2, 1]);
   assert.equal((await tool(link, "record_restring", { racket: "v9", old_strings: "snapped" })).isError, true);
+  out = await tool(link, "strings_broke", { racket: "v9", date: "2026-10-28" });
+  assert.match(out.content[0].text, /broke on Oct 28, 2026 after 0 h/);
+  assert.equal((await tool(link, "strings_broke", { racket: "v9" })).isError, true, "no strings left to break");
   const sync = await jack.call("POST", "/api/sync", { ops: [] });
-  assert.equal(sync.data.rackets.v9.jobs.length, 2);
+  assert.equal(sync.data.rackets.v9.jobs.length, 3);
+  assert.equal(sync.data.rackets.v9.strungOn, null);
 });
 
 test("restring advice for every racket, and worn strings say restring now", async () => {

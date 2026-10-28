@@ -10,6 +10,15 @@
 export const REASONS = ["broke", "dead", "routine"];
 export const REASON_NAMES = { broke: "broke", dead: "went dead", routine: "routine restring" };
 
+// The day the strings in the racket now count from: Strung on, or, with no date (for example after
+// "Strings broke"), the day the last set came out, so older play isn't counted again. Null when unknown.
+export function currentSince(r) {
+  if (r.strungOn) return r.strungOn;
+  const ends = (r.jobs || []).map((j) => j.to).sort();
+  return ends.length ? ends[ends.length - 1] : null;
+}
+export const onCurrentStrings = (r) => { const since = currentSince(r); return (r.plays || []).filter((p) => !since || p.d >= since); };
+
 // Minutes played on strings in place from `from` (YYYY-MM-DD) up to, not including, `to` (null = still in).
 export function minutesBetween(plays, from, to) {
   return (plays || []).filter((p) => (!from || p.d >= from) && (!to || p.d < to)).reduce((a, p) => a + p.min, 0);

@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever a file changes so phones pick up the update.
-const VERSION = "stringbed-v10";
+const VERSION = "stringbed-v11";
 const FILES = ["./", "index.html", "tension.js", "restring.js", "courts.js", "stringjobs.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -30,4 +30,21 @@ self.addEventListener("fetch", e => {
     const saved = await caches.match(req, { ignoreSearch: true }) || (req.mode === "navigate" ? await caches.match("index.html") : null);
     return saved || net; // nothing saved: keep waiting for the network
   })());
+});
+
+// Restring reminders (Web Push, sent by the daily check in lib/push.js).
+self.addEventListener("push", e => {
+  let m = {};
+  try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data && e.data.text() }; }
+  e.waitUntil(self.registration.showNotification(m.title || "Stringbed Meter", {
+    body: m.body || "", tag: m.tag, icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: m.url || "./" },
+  }));
+});
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    const open = list.find(c => c.url.startsWith(self.registration.scope));
+    return open ? open.focus() : self.clients.openWindow(url);
+  }));
 });

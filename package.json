@@ -18,7 +18,8 @@
     "@neon/env": "^1.6.6",
     "@neondatabase/auth": "0.6.0-beta",
     "@vercel/functions": "3.9.11",
-    "pg": "8.23.1"
+    "pg": "8.23.1",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.3.0",
