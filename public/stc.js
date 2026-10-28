@@ -3,7 +3,8 @@
 // the GameTime page makes, then:
 //   1. shows open courts for a day in a clean, phone-sized view. Tapping one opens GameTime's
 //      own booking form for that slot, where the member finishes the booking (and its robot check).
-//   2. sends the member's own bookings (never anyone else's) to Stringbed Meter, so they reach the
+//   2. sends the member's own bookings (from GameTime's "upcoming" list, or the court sheets if
+//      that isn't available; never anyone else's) to Stringbed Meter, so they reach the
 //      app, the court calendar and the play log.
 // It never books, changes or cancels anything in GameTime. It is a classic script (not a module)
 // so it loads from another site without CORS. Tests load it in a sandbox and use SBM_GT.
@@ -59,7 +60,36 @@
   const bookUrl = (courtId, date, start) => `/scheduling/index/book/sport/${SPORT}/court/${courtId}/date/${date}/time/${start}`;
   const sheetUrl = (date, group) => `/scheduling/index/jsoncourtdata/sport/${SPORT}/date/${date}?group=${group}`;
 
-  globalThis.SBM_GT = { openSlots, myBookings, bookUrl, sheetUrl, clock, hhmm };
+  const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+  const to24 = (h, m, ap) => ((+h % 12) + (/p/i.test(ap) ? 12 : 0)) * 60 + +m;
+
+  // The member's upcoming bookings from GameTime's own "upcoming" feed (/account/jsonlistupcoming),
+  // which is what the dashboard's reminders use. `me` is the member's first name, to leave them
+  // out of the partner list. `complete` is false when the feed was cut off by its limit.
+  function parseUpcoming(feed, me) {
+    const res = (feed && feed.Response) || {}, rows = res.Results || [], out = [];
+    for (const r of rows) {
+      if (r.type !== "booking" || Number(r.sport_id) !== SPORT) continue;
+      const d = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s*(\d{4})/i.exec(r.date || "");
+      const t = /(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/i.exec(r.time || "");
+      if (!d || !t) continue;
+      const start = to24(t[1], t[2], t[3]);
+      let minutes = to24(t[4], t[5], t[6]) - start; if (minutes <= 0) minutes += 1440;
+      const players = String(r.players || "").split(",").map((x) => x.replace(/\s+/g, " ").trim()).filter(Boolean);
+      const mine = me ? players.findIndex((n) => n.toUpperCase().startsWith(me.toUpperCase() + " ")) : 0;
+      const others = players.filter((_, i) => i !== (mine >= 0 ? mine : 0));
+      out.push({
+        bkId: String(r.booking_id), ref: r.conf_id ? String(r.conf_id) : null,
+        date: `${d[3]}-${pad(MONTHS.indexOf(d[1].slice(0, 3).toLowerCase()) + 1)}-${pad(d[2])}`, time: hhmm(start), minutes,
+        court: r.place || null, kind: /lesson|clinic/i.test(r.activity || "") ? "drills" : players.length >= 3 ? "doubles" : "singles",
+        note: others.length ? ("With " + others.join(", ")).slice(0, 200) : null,
+      });
+    }
+    return { bookings: out, complete: Number(res.Total || 0) <= rows.length };
+  }
+  const upcomingUrl = "/account/jsonlistupcoming?wltext=1&family=member&limit=50&order=asc";
+
+  globalThis.SBM_GT = { openSlots, myBookings, parseUpcoming, upcomingUrl, bookUrl, sheetUrl, clock, hhmm };
 
   // ---------- the panel (only on GameTime, launched from the bookmark) ----------
   const cfg = typeof window !== "undefined" ? window.__sbmGT : null;
@@ -177,24 +207,38 @@
   async function scanMine() {
     const box = $("mine");
     if (!userId) { box.innerHTML = '<p class="muted">Sign in to GameTime to see your bookings.</p>'; return; }
-    const found = [];
+    let found = [], scanned = days;
     try {
-      for (const d of days) for (const [g] of GROUPS) {
-        const s = await sheet(d, g);
-        for (const b of myBookings(s, d, userId)) if (!found.some((x) => x.bkId === b.bkId)) found.push(b);
-      }
-    } catch { box.innerHTML = '<p class="err">Couldn\'t read your bookings from GameTime.</p>'; return; }
+      // GameTime's own upcoming list: one request, covers every booking ahead.
+      const r = await fetch(upcomingUrl, { credentials: "same-origin", headers: { accept: "application/json" } });
+      if (!r.ok) throw new Error("upcoming " + r.status);
+      const me = ((/Welcome,\s*([A-Za-z'-]+)/.exec(document.body.innerText || "") || [])[1]) || null;
+      const up = parseUpcoming(await r.json(), me);
+      found = up.bookings;
+      const last = found.length ? found[found.length - 1].date : null;
+      // Cancel-sync only covers days the list fully covers.
+      scanned = up.complete ? Array.from({ length: 60 }, (_, i) => addDays(today, i)) : Array.from({ length: 60 }, (_, i) => addDays(today, i)).filter((d) => last && d < last);
+    } catch {
+      // Older or different GameTime set-ups: read the court sheets instead.
+      try {
+        for (const d of days) for (const [g] of GROUPS) {
+          const s = await sheet(d, g);
+          for (const b of myBookings(s, d, userId)) if (!found.some((x) => x.bkId === b.bkId)) found.push(b);
+        }
+      } catch { box.innerHTML = '<p class="err">Couldn\'t read your bookings from GameTime.</p>'; return; }
+    }
+    found.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
     const ul = document.createElement("ul");
     for (const b of found) {
-      const li = document.createElement("li");
-      li.textContent = dayName(b.date, days.indexOf(b.date)) + ", " + clock(+b.time.slice(0, 2) * 60 + +b.time.slice(3)) + " \u00b7 " + b.court + " \u00b7 " + (b.minutes) + " min" + (b.kind === "doubles" ? " \u00b7 doubles" : b.kind === "drills" ? " \u00b7 lesson" : "");
+      const li = document.createElement("li"), i = days.indexOf(b.date);
+      li.textContent = (i >= 0 ? dayName(b.date, i) : dayName(b.date, 9)) + ", " + clock(+b.time.slice(0, 2) * 60 + +b.time.slice(3)) + " \u00b7 " + b.court + " \u00b7 " + b.minutes + " min" + (b.kind === "doubles" ? " \u00b7 doubles" : b.kind === "drills" ? " \u00b7 lesson" : "") + (b.note ? " \u00b7 " + b.note.replace(/^With /, "with ") : "");
       ul.appendChild(li);
     }
     box.textContent = "";
-    if (found.length) box.appendChild(ul); else box.innerHTML = '<p class="muted">No bookings in the next ' + DAYS_AHEAD + " days.</p>";
+    if (found.length) box.appendChild(ul); else box.innerHTML = '<p class="muted">No upcoming bookings.</p>';
     const note = document.createElement("p"); note.className = "muted"; note.textContent = "Sending to Stringbed Meter\u2026"; box.appendChild(note);
     try {
-      const res = await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, days, bookings: found }) });
+      const res = await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, days: scanned, bookings: found }) });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "HTTP " + res.status);
       note.textContent = out.message || "Saved to Stringbed Meter and your court calendar.";

@@ -50,6 +50,16 @@ test("calendar files escape text and fold long lines", () => {
   assert.match(ics, /LOCATION:Seattle Tennis Club/);
   assert.ok(ics.split("\r\n").every((l) => l.length <= 75), "no line over 75 characters");
   assert.match(ics, /TRIGGER:-PT60M/);
+  // STC's 6-hour cancellation rule: a reminder an hour before the cut-off, and the club's address.
+  assert.match(ics, /TRIGGER:-PT7H/);
+  assert.match(ics, /Last chance to cancel Doubles/);
+  assert.match(ics, /LOCATION:Seattle Tennis Club\\, 922 McGilvra Blvd E/);
+});
+
+test("bookings elsewhere get no club rules", () => {
+  const ics = toIcs([{ id: "b2", start: Date.parse("2026-11-01T02:00:00Z"), min: 60, kind: "singles", location: "Amy Yee Tennis Center" }]);
+  assert.match(ics, /LOCATION:Amy Yee Tennis Center/);
+  assert.doesNotMatch(ics, /PT7H|six hours|6 hours/);
 });
 
 const jack = browser(), sam = browser();
