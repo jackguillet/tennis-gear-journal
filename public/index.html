@@ -405,7 +405,7 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice } from "./restring.js";
-import { toIcs, bookingTitle, zonedToUtc, DEFAULT_TZ } from "./courts.js";
+import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.js";
 (() => {
   "use strict";
   // ---------- state & storage ----------
@@ -728,7 +728,9 @@ import { toIcs, bookingTitle, zonedToUtc, DEFAULT_TZ } from "./courts.js";
       const t = document.createElement("span"); t.className = "t";
       const w = document.createElement("b"); w.textContent = bkWhen(b);
       const r = b.racketId && rackets[b.racketId] ? " · " + rackets[b.racketId].name : "";
-      t.append(w, document.createTextNode(" · " + bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : "")));
+      const cut = cancelBy(b);
+      const cancelNote = !done && cut ? (cut > now ? " · cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : " · past the 6-hour cancel cut-off") : "";
+      t.append(w, document.createTextNode(" · " + bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : cancelNote)));
       const k = document.createElement("span"); k.className = "k"; k.textContent = hrs(b.min) + " h";
       const cal = document.createElement("button"); cal.type = "button"; cal.textContent = "📅"; cal.setAttribute("aria-label", "Add this booking to your calendar");
       cal.onclick = () => downloadIcs(b);

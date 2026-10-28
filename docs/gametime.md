@@ -36,3 +36,15 @@ Editing a booking: `GET /scheduling/index/editbooking/sport/2/conf/<conf>?bk=<bk
 ## How the app uses this
 
 `public/stc.js` (the GameTime button) runs on stc.gametime.net in the member's own browser. It reads `jsoncourtdata` for groups 2, 3 and 4 and shows open slots. Every slot links to GameTime's booking form. It also picks out the member's own bookings: `b.e` is the booker's member id, `b.f` is the confirmation number, and the member id comes from `cv.setUserId(<id>)` in the page. It reads 7 days × 3 areas one request at a time and posts the member's bookings to `/api/gametime`. Nothing is sent to the server about other members except the names of the member's own partners on their own bookings.
+
+## Other GameTime feeds (second recording, 2026-10-28)
+
+- `GET /account/jsonlistupcoming?wltext=1&family=member&limit=50&order=asc` returns the member's upcoming bookings (`date` "Thursday Oct 29, 2026", `time` "1:00pm - 2:15pm", `place`, `booking_id`, `conf_id`, `sport_id`, `players`). The GameTime button uses it first. Editing a booking gives it a new `booking_id` but keeps the `conf_id`, so rows are keyed on the confirmation number.
+- `GET /cne/index/listdata?...` and `/cne/event/view/eventid/<id>` list classes and events (category, dates, price, pros, spots `participants.text` such as "4/18", waitlist).
+- `/scheduling/waitlist/index/sport/2`: the court waitlist (HTML).
+- `/scheduling/gameseeker/rosteravailable/sport/2`: members who opted in as available partners, with level, phone and email. Personal data: show it only inside the member's own browser and never store it.
+- `/scheduling/index/get-reservation-types?api=1&sport=2`: Singles, Doubles, Lesson, Clinic, Lesson Available, Round Robin and others.
+
+## STC member portal (Jonas Clubhouse Online)
+
+The portal at www.seattletennisclub.org has a JSON API under `/api/v1/` (dining reservations, events, roster, my bookings). Club tennis rules that the app uses: cancel at least 6 hours before a court time (a no-show can mean a one-week suspension), check in at the Pro Shop before playing, book the ball machine on the day only, wear mostly-white clothing (tennis shoes can be any colour). Address: 922 McGilvra Blvd E, Seattle, WA 98112.

@@ -54,6 +54,22 @@ test("only the member's own bookings are picked out, with type and partners", ()
   assert.equal(gt.myBookings(SHEET, "2026-10-29", 99999).length, 0);
 });
 
+// Shaped like /account/jsonlistupcoming. Names are made up.
+const UPCOMING = { Response: { Response_Code: 200, Total: 3, Results: [
+  { type: "booking", date: "Thursday Oct 29, 2026", time: "1:00pm - 2:15pm", activity: "Tennis", place: "Court 17", booking_id: 776881, conf_id: 542013, sport_id: 2, players: "JACKSON GUILLET, MARC  POPPY" },
+  { type: "booking", date: "Saturday Oct 31, 2026", time: "11:45am - 1:00pm", activity: "Tennis", place: "Court 14", booking_id: 776801, conf_id: 542223, sport_id: 2, players: "ANA B, JACKSON GUILLET, CY D, EVE F" },
+  { type: "booking", date: "Sunday Nov 1, 2026", time: "9:00am - 10:00am", activity: "Pickleball", place: "Court 3", booking_id: 9, conf_id: 10, sport_id: 4, players: "JACKSON GUILLET" },
+] } };
+
+test("GameTime's upcoming list becomes bookings, tennis only, without the member in the partner list", () => {
+  const { bookings, complete } = gt.parseUpcoming(UPCOMING, "JACKSON");
+  assert.equal(complete, true);
+  assert.equal(bookings.length, 2);
+  assert.deepEqual({ ...bookings[0] }, { bkId: "776881", ref: "542013", date: "2026-10-29", time: "13:00", minutes: 75, court: "Court 17", kind: "singles", note: "With MARC POPPY" });
+  assert.equal(bookings[1].time, "11:45"); assert.equal(bookings[1].kind, "doubles"); assert.equal(bookings[1].note, "With ANA B, CY D, EVE F");
+  assert.equal(gt.parseUpcoming({ Response: { Total: 9, Results: UPCOMING.Response.Results } }).complete, false);
+});
+
 test("booking links go to GameTime's own form", () => {
   assert.equal(gt.bookUrl("11", "2026-10-29", 780), "/scheduling/index/book/sport/2/court/11/date/2026-10-29/time/780");
   assert.equal(gt.clock(780), "1 pm"); assert.equal(gt.clock(555), "9:15 am");
@@ -145,4 +161,14 @@ test("only a GameTime key works, and bad data is refused", async () => {
   assert.equal((await send({ key, days: [], bookings: [{ bkId: "1", date: dayIn(1), time: "10:00", minutes: 5 }] })).status, 400);
   const pre = await fetch(app.origin + "/api/gametime", { method: "OPTIONS", headers: { origin: "https://stc.gametime.net" } });
   assert.equal(pre.status, 204);
+});
+
+test("an edited booking (new GameTime booking id, same confirmation) updates the same row", async () => {
+  const d = dayIn(5);
+  await send({ key, days: [d], bookings: [{ bkId: "3001", ref: "600001", date: d, time: "09:00", minutes: 75, court: "Court 1", kind: "singles" }] });
+  const out = await (await send({ key, days: [d], bookings: [{ bkId: "3002", ref: "600001", date: d, time: "10:15", minutes: 75, court: "Court 2", kind: "singles" }] })).json();
+  assert.equal(out.added, 0); assert.equal(out.cancelled, 0);
+  const state = (await jack.call("POST", "/api/sync", { ops: [] })).data;
+  const hits = state.bookings.filter((x) => x.ref === "600001");
+  assert.equal(hits.length, 1); assert.equal(hits[0].court, "Court 2");
 });
