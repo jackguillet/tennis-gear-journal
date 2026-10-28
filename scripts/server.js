@@ -34,7 +34,7 @@ export async function startServer({ port = 3000, useDatabaseUrl = false } = {}) 
     process.env.NEON_AUTH_BASE_URL = origin + localAuth.basePath;
   }
   process.env.NEON_AUTH_COOKIE_SECRET ||= "local-cookie-secret-local-cookie-secret-0123";
-  const routes = { "/api/sync": await import("../api/sync.js"), "/api/tokens": await import("../api/tokens.js"), "/api/mcp": await import("../api/mcp.js"), "/api/calendar": await import("../api/calendar.js") };
+  const routes = { "/api/sync": await import("../api/sync.js"), "/api/tokens": await import("../api/tokens.js"), "/api/mcp": await import("../api/mcp.js"), "/api/calendar": await import("../api/calendar.js"), "/api/gametime": await import("../api/gametime.js") };
   const authRoute = await import("../api/auth.js");
 
   const server = createServer(async (req, res) => {

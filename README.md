@@ -59,6 +59,8 @@ The Court bookings card keeps the courts you book. Add one in the app, or paste 
 
 Under "Show bookings in my calendar", make a private calendar link and subscribe to it in Apple or Google Calendar. Each booking appears with a reminder an hour before, and cancelled ones disappear. Calendar links can only read bookings and are separate from connector links (`api_tokens.scope`). The feed is `GET /api/calendar/<secret>.ics`. The 📅 button on a booking downloads a one-off `.ics` file for when you don't want to wait for the calendar to refresh.
 
+**GameTime button.** Under "GameTime button" in the same card, make a bookmark (drag it to the bookmarks bar, or paste it into a Safari bookmark on iPhone). Tap it while signed in on stc.gametime.net. It shows open courts by day and area, and tapping one opens GameTime's own booking form for that slot. It also sends your own bookings for the next 7 days to `POST /api/gametime`, which adds them, updates moved ones and cancels ones gone from GameTime. The bookmark's key (`scope = 'gametime'`) can only save court bookings. The script is `public/stc.js`. It runs in your browser with your GameTime session and never books or cancels anything itself.
+
 Removing a booking here does not cancel it with the club. Do that in GameTime. Notes on how GameTime's court sheet works, for a later direct hookup, are in `docs/gametime.md`.
 
 ## Put it on your iPhone

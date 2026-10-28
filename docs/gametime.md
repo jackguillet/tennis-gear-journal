@@ -32,3 +32,7 @@ Sport 2 is tennis and sport 4 is pickleball.
 Because of step 4, the app must not book or change bookings on its own. That would mean getting around the club's anti-bot check. Instead, open GameTime's own booking page at the chosen slot (step 1) and let the member finish there.
 
 Editing a booking: `GET /scheduling/index/editbooking/sport/2/conf/<conf>?bk=<bkId>`. Confirmation page: `/scheduling/confirmation/history/sport/2/id/<conf>`.
+
+## How the app uses this
+
+`public/stc.js` (the GameTime button) runs on stc.gametime.net in the member's own browser. It reads `jsoncourtdata` for groups 2, 3 and 4 and shows open slots. Every slot links to GameTime's booking form. It also picks out the member's own bookings: `b.e` is the booker's member id, `b.f` is the confirmation number, and the member id comes from `cv.setUserId(<id>)` in the page. It reads 7 days × 3 areas one request at a time and posts the member's bookings to `/api/gametime`. Nothing is sent to the server about other members except the names of the member's own partners on their own bookings.
