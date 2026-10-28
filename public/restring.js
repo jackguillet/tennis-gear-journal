@@ -18,6 +18,7 @@
 // breakage. The hour figures below are typical values for a 4.0 player with moderate topspin,
 // not lab constants: the trend from your own readings, when you have them, outranks them.
 import { readingKg } from "./tension.js";
+import { onCurrentStrings } from "./stringjobs.js";
 
 // Hours of play before the strings stop playing like new (reference player).
 export const PLAY_LIFE = { poly: 15, kevlar: 15, hybrid: 22, multi: 25, syngut: 25, gut: 35 };
@@ -44,6 +45,27 @@ const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const r1 = (v) => Math.round(v * 10) / 10;
 const dayNum = (d) => Date.parse(d + "T00:00:00Z") / DAY;
 const addDays = (d, n) => new Date((dayNum(d) + n) * DAY).toISOString().slice(0, 10);
+
+// Your own breaks, from String history. Each set of strings that broke tells us how long strings
+// really last for you against what the model expected for that set (same string, gauge, tension,
+// racket). The ratio scales the model's break hours. It starts from the model (as if one break had
+// gone exactly as expected) and moves toward your own record with every break, so one odd break
+// can't swing it far: factor = geometric mean of [1, ratio1, ratio2, ...], kept within 0.3-2.
+export function personalBreak(rackets, profile = {}) {
+  const ratios = [];
+  for (const r of Object.values(rackets || {})) {
+    for (const j of r.jobs || []) {
+      if (j.reason !== "broke") continue;
+      const eff = (r.plays || []).filter((p) => p.d >= j.from && p.d < j.to).reduce((a, p) => a + p.min * (INTENSITY[p.kind] || 1), 0) / 60;
+      if (eff <= 0) continue; // no play logged on that set: nothing to learn from
+      const expected = lifeHours({ ...r, material: j.material, gauge: j.gauge, strungKg: j.strungKg }, profile).break;
+      ratios.push(eff / expected);
+    }
+  }
+  if (!ratios.length) return { factor: 1, breaks: 0 };
+  const factor = Math.exp(ratios.reduce((a, x) => a + Math.log(x), 0) / (ratios.length + 1));
+  return { factor: clamp(factor, 0.3, 2), breaks: ratios.length };
+}
 
 // Hours of play each component allows, for this racket and player.
 export function lifeHours(r, profile = {}) {
@@ -77,19 +99,21 @@ export function tensionLoss(r) {
   return { loss: Math.max(0, loss), limit, baseKg: base, lastKg, from, at: last.t, estimate: !calibrated };
 }
 
-// The advice for one racket. `today` is YYYY-MM-DD in the player's time zone.
-export function restringAdvice(r, profile = {}, today = new Date().toISOString().slice(0, 10)) {
+// The advice for one racket. `today` is YYYY-MM-DD in the player's time zone. `personal` is
+// personalBreak() over all the player's rackets, when known.
+export function restringAdvice(r, profile = {}, today = new Date().toISOString().slice(0, 10), personal = { factor: 1, breaks: 0 }) {
   const m = PLAY_LIFE[r.material] ? r.material : "poly";
-  const plays = (r.plays || []).filter((p) => !r.strungOn || p.d >= r.strungOn);
+  const plays = onCurrentStrings(r);
   const minutes = plays.reduce((a, p) => a + p.min, 0);
   const effHours = plays.reduce((a, p) => a + p.min * (INTENSITY[p.kind] || 1), 0) / 60;
   const life = lifeHours(r, profile);
+  life.break *= personal.factor || 1;
   const loss = tensionLoss(r);
   const age = r.strungOn ? Math.max(0, dayNum(today) - dayNum(r.strungOn)) : null;
 
   const parts = [
     { key: "dead", used: effHours / life.play, text: `${MATERIAL_NAME[m]} goes dead after about ${Math.round(life.play)} h for your game` },
-    { key: "break", used: effHours / life.break, text: `likely to break after about ${Math.round(life.break)} h (gauge, pattern, spin)` },
+    { key: "break", used: effHours / life.break, text: `likely to break after about ${Math.round(life.break)} h (` + (personal.breaks ? `from your ${personal.breaks} logged break${personal.breaks === 1 ? "" : "s"} and gauge, pattern, spin` : "gauge, pattern, spin") + ")" },
   ];
   if (loss) parts.push({ key: "tension", used: loss.loss / loss.limit, text: `tension down ${Math.round(loss.loss * 100)}% from ${loss.from === "strung" ? "the tension you strung at" : "your first reading"} (restring at about ${Math.round(loss.limit * 100)}%)` });
   if (age !== null) parts.push({ key: "age", used: age / SHELF_DAYS[m], text: `${age} days old (${MATERIAL_NAME[m]} goes stale after about ${SHELF_DAYS[m]} days even unplayed)` });
@@ -132,6 +156,7 @@ export function restringAdvice(r, profile = {}, today = new Date().toISOString()
     tension_loss_pct: loss ? Math.round(loss.loss * 100) : null,
     tension_limit_pct: loss ? Math.round(loss.limit * 100) : null,
     expected_hours: { dead: r1(life.play), break: r1(life.break) },
+    personal_breaks: personal.breaks || 0,
     factors: parts.map((p) => ({ factor: p.key, life_used_pct: Math.round(p.used * 100), note: p.text })),
   };
 }

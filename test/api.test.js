@@ -160,6 +160,21 @@ test("bad play sessions are refused", async () => {
   ]) assert.equal((await jack.call("POST", "/api/sync", { ops: [op] })).data.refused.length, 1, op.id);
 });
 
+test("past string jobs save per racket and stay private", async () => {
+  const job = { op: "job.add", id: "job-1", racketId: "jk-blade", from: "2026-09-01", to: "2026-10-11", reason: "broke", stringName: "RPM Blast", material: "poly", gauge: 1.25, strungKg: 23 };
+  let res = await jack.call("POST", "/api/sync", { ops: [job, job] }); // sent twice
+  assert.deepEqual(res.data.rackets["jk-blade"].jobs, [{ id: "job-1", from: "2026-09-01", to: "2026-10-11", reason: "broke", stringName: "RPM Blast", material: "poly", gauge: 1.25, strungKg: 23 }]);
+  res = await jack.call("POST", "/api/sync", { ops: [{ ...job, id: "job-bad", to: "2026-08-01" }, { ...job, id: "job-bad2", reason: "lost" }] });
+  assert.equal(res.data.refused.length, 2);
+  // Sam can't add history to Jack's racket or delete it.
+  res = await sam.call("POST", "/api/sync", { ops: [{ ...job, id: "job-sam" }, { op: "job.delete", id: "job-1" }] });
+  assert.equal(res.status, 200);
+  res = await jack.call("POST", "/api/sync", { ops: [] });
+  assert.deepEqual(res.data.rackets["jk-blade"].jobs.map((j) => j.id), ["job-1"]);
+  res = await jack.call("POST", "/api/sync", { ops: [{ op: "job.delete", id: "job-1" }] });
+  assert.deepEqual(res.data.rackets["jk-blade"].jobs, []);
+});
+
 test("each player has their own level and style", async () => {
   let res = await jack.call("POST", "/api/sync", { ops: [] });
   assert.deepEqual(res.data.profile, { level: null, style: null });
@@ -175,6 +190,30 @@ test("each player has their own level and style", async () => {
 
 test("the auth route refuses odd paths", async () => {
   assert.equal((await jack.call("GET", "/api/auth/..%2f..%2fetc")).status, 404);
+});
+
+test("a forgotten password can be reset from the emailed link", async () => {
+  const robin = browser();
+  assert.equal((await robin.call("POST", "/api/auth/sign-up/email", { name: "Robin", email: "robin@example.com", password: "old-password-1" })).status, 200);
+  const res = await browser().call("POST", "/api/auth/request-password-reset", { email: "robin@example.com", redirectTo: app.origin + "/" });
+  assert.equal(res.status, 200, JSON.stringify(res.data));
+  const mail = app.mail.at(-1);
+  assert.equal(mail.to, "robin@example.com");
+  // The emailed link checks the token, then sends the browser back to the app with it.
+  const hop = await fetch(mail.url, { redirect: "manual" });
+  assert.equal(hop.headers.get("location"), `${app.origin}/?token=${mail.token}`);
+  const phone = browser();
+  assert.equal((await phone.call("POST", "/api/auth/reset-password", { newPassword: "new-password-2", token: mail.token })).status, 200);
+  assert.notEqual((await phone.call("POST", "/api/auth/reset-password", { newPassword: "again-password-3", token: mail.token })).status, 200, "a link works once");
+  assert.equal((await phone.call("POST", "/api/auth/sign-in/email", { email: "robin@example.com", password: "old-password-1" })).status, 401);
+  assert.equal((await phone.call("POST", "/api/auth/sign-in/email", { email: "robin@example.com", password: "new-password-2" })).status, 200);
+});
+
+test("asking for a reset for an unknown email looks the same", async () => {
+  const before = app.mail.length;
+  const res = await browser().call("POST", "/api/auth/request-password-reset", { email: "nobody@example.com", redirectTo: app.origin + "/" });
+  assert.equal(res.status, 200);
+  assert.equal(app.mail.length, before);
 });
 
 test("signing out ends the session", async () => {
