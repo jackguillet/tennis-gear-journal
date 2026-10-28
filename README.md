@@ -14,6 +14,8 @@ neon neon-auth domain add https://<your-app>.vercel.app   # Neon Auth only accep
 npm run db:migrate      # optional: create the tables now (the API also does it on first sync)
 ```
 
+**Forgotten passwords.** The sign-in form has a *Forgot password?* link. It asks Neon Auth (`request-password-reset`) to email a link; the link comes back to the app with `?token=…`, where the player picks a new password (`reset-password`). Neon Auth sends the email, and the app's domain has to be one of its trusted domains (the `domain add` step above). If no email arrives, check the email settings for Neon Auth in the Neon console.
+
 ## Deploy on Vercel
 
 1. Import the repo at [vercel.com/new](https://vercel.com/new). Framework preset: **Other**. Leave the build settings alone (`vercel.json` serves `public/`, and `npm run build` checks that everything loads).
@@ -40,6 +42,10 @@ The **Restring** card shows how much life is left in each racket's strings, a pr
 - **Age.** Strings go stale in the bag: about 2 months for polyester, 4–5 months for nylon and gut.
 
 Hours are weighted by type of play (drills and ball machine count more than doubles). The hour figures are typical values, not lab constants; your own readings refine the estimate. The model lives in `public/restring.js`, shared with the chat connector, and is tested in `test/restring.test.js`.
+
+## String history
+
+Press **Record a restring** in the Racket section each time a racket is restrung. The strings coming out are saved to **String history** with the dates, string, gauge, tension, the hours played on them and why they came out (broke, went dead or a routine restring); the racket takes the new strings and its hours start again from zero. **By string** compares every string you have used across all rackets: average hours it lasted and how often it broke. The chat connector's `record_restring` does the same (with `old_strings`), and `string_history` answers "which string lasts longest for me?". Shared code: `public/stringjobs.js`.
 
 ## Log play by chatting (Claude and other assistants)
 

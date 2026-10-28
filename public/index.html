@@ -15,7 +15,9 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Fonts load without holding up the page: on weak Wi-Fi the app shows at once in system fonts. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
 <style>
 /* Layout: one narrow column, phone first. A big readout on a string-grid panel, then racket settings, then history. */
 :root {
@@ -179,12 +181,13 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     <p class="small" id="account-intro">Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.</p>
     <form id="account-form" class="account-form">
       <div class="field" id="f-name" hidden><label for="acct-name">Your name</label><input id="acct-name" type="text" autocomplete="name" maxlength="60"></div>
-      <div class="field"><label for="acct-email">Email</label><input id="acct-email" type="email" autocomplete="email" required></div>
-      <div class="field"><label for="acct-pass">Password</label><input id="acct-pass" type="password" autocomplete="current-password" minlength="8" required></div>
+      <div class="field" id="f-email"><label for="acct-email">Email</label><input id="acct-email" type="email" autocomplete="email" required></div>
+      <div class="field" id="f-pass"><label for="acct-pass" id="acct-pass-label">Password</label><input id="acct-pass" type="password" autocomplete="current-password" minlength="8" required></div>
       <button class="btn primary" id="acct-go" type="submit">Sign in</button>
     </form>
     <p class="small err-text" id="acct-err" role="alert" hidden></p>
-    <p class="small"><button class="linkbtn" id="acct-switch" type="button">New here? Create an account</button></p>
+    <p class="small" id="acct-ok" role="status" hidden></p>
+    <p class="small" style="display:flex;gap:18px;flex-wrap:wrap"><button class="linkbtn" id="acct-switch" type="button">New here? Create an account</button><button class="linkbtn" id="acct-forgot" type="button">Forgot password?</button></p>
   </section>
 
   <div id="app" class="app" hidden>
@@ -294,6 +297,16 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     <ol class="hist" id="hist"></ol>
   </section>
 
+  <section class="card" aria-labelledby="h-jobs" id="jobs-card">
+    <h2 id="h-jobs">String history</h2>
+    <ol class="plays" id="jobs"></ol>
+    <p class="empty" id="jobs-empty">Each time you restring, press Record a restring below. The old strings are kept here with the hours they lasted and why they came out, so you can see which string lasts longest for you.</p>
+    <div id="by-string" hidden>
+      <h2 style="margin-top:6px">By string</h2>
+      <ul class="factors" id="by-string-list"></ul>
+    </div>
+  </section>
+
   <section class="card" aria-labelledby="h-set">
     <h2 id="h-set">Racket</h2>
     <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" maxlength="40"></div>
@@ -323,6 +336,34 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <div class="field"><label for="r-string">String name</label><input id="r-string" type="text" maxlength="40" placeholder="e.g. ALU Power"></div>
       <div class="field"><label for="r-weight">Weight (g)</label><input id="r-weight" type="number" min="200" max="400" step="1" inputmode="numeric"></div>
     </div>
+    <div class="row-btns"><button class="btn primary" id="rs-new" type="button">Record a restring</button></div>
+    <form id="rs-form" class="account-form" hidden>
+      <p class="small">The strings coming out go to String history. Fields start with the current strings; change what's different.</p>
+      <fieldset class="picks" id="rs-why">
+        <legend>Old strings came out because</legend>
+        <label><input type="radio" name="rs-why" value="broke"><span>They broke</span></label>
+        <label><input type="radio" name="rs-why" value="dead"><span>Went dead</span></label>
+        <label><input type="radio" name="rs-why" value="routine" checked><span>Routine</span></label>
+      </fieldset>
+      <div class="grid2">
+        <div class="field"><label for="rs-day">Restrung on</label><input id="rs-day" type="date" required></div>
+        <div class="field"><label for="rs-kg" id="rs-kg-label">Tension (kg)</label><input id="rs-kg" type="number" min="10" max="80" step="0.5" inputmode="decimal"></div>
+        <div class="field"><label for="rs-name">New string name</label><input id="rs-name" type="text" maxlength="40" placeholder="e.g. ALU Power"></div>
+        <div class="field"><label for="rs-gauge">Gauge (mm)</label><input id="rs-gauge" type="number" min="1.05" max="1.45" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label for="rs-mat">String type</label>
+          <select id="rs-mat">
+            <option value="poly">Polyester</option>
+            <option value="multi">Multifilament / nylon</option>
+            <option value="syngut">Synthetic gut</option>
+            <option value="gut">Natural gut</option>
+            <option value="hybrid">Hybrid (gut or multi + poly)</option>
+            <option value="kevlar">Aramid (Kevlar)</option>
+          </select>
+        </div>
+      </div>
+      <p class="small err-text" id="rs-err" role="alert" hidden></p>
+      <div class="row-btns"><button class="btn primary" type="submit">Save restring</button><button class="btn" id="rs-cancel" type="button">Cancel</button></div>
+    </form>
     <div class="row-btns">
       <button class="btn" id="add" type="button">Add a racket</button>
       <button class="btn danger" id="del" type="button">Delete this racket</button>
@@ -406,6 +447,7 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.js";
+import { REASON_NAMES, currentJob, minutesBetween, stringStats } from "./stringjobs.js";
 (() => {
   "use strict";
   // ---------- state & storage ----------
@@ -419,13 +461,16 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
   let lastIsSample = false;
 
   const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [], plays: [] });
+  const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [], plays: [], jobs: [] });
 
   const uid = () => (window.crypto && crypto.randomUUID ? crypto.randomUUID() : newId() + Math.random().toString(36).slice(2, 10));
   const lsGet = (k, d) => { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } };
   const lsSet = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
   // The signed-in player. Each player's copy on this device is kept under their own keys.
   let user = lsGet("sbm-user", null);
+  // A password-reset link comes back to the app with ?token=... (see the accounts section).
+  const params = new URLSearchParams(location.search);
+  let resetToken = params.get("token") || null;
   const key = name => "sbm-" + name + ":" + (user ? user.id : "none");
   function localLoad() { return lsGet(key("rackets"), {}); }
   let profile = { level: null, style: null };
@@ -467,9 +512,16 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
     const r = rackets[id]; r.plays = (r.plays || []).filter(y => y !== p);
     queue({ op: "play.delete", id: p.id });
   }
+  function addJob(id, j) {
+    const r = rackets[id]; j.id = j.id || uid(); (r.jobs = r.jobs || []).push(j);
+    persist(id);
+    queue({ op: "job.add", racketId: id, ...j });
+  }
   function saveProfile() { queue({ op: "profile.put", data: { level: profile.level || null, style: profile.style || null } }); }
   function applyLocal(op) {
-    if (op.op === "racket.put") rackets[op.id] = { ...op.data, readings: rackets[op.id] ? rackets[op.id].readings : [], plays: rackets[op.id] ? rackets[op.id].plays || [] : [] };
+    if (op.op === "racket.put") rackets[op.id] = { ...op.data, readings: rackets[op.id] ? rackets[op.id].readings : [], plays: rackets[op.id] ? rackets[op.id].plays || [] : [], jobs: rackets[op.id] ? rackets[op.id].jobs || [] : [] };
+    else if (op.op === "job.add") { const r = rackets[op.racketId]; if (r && !(r.jobs || []).some(x => x.id === op.id)) { const { op: _, racketId, ...j } = op; (r.jobs = r.jobs || []).push(j); } }
+    else if (op.op === "job.delete") Object.values(rackets).forEach(r => { r.jobs = (r.jobs || []).filter(x => x.id !== op.id); });
     else if (op.op === "play.add") { const r = rackets[op.racketId]; if (r && !(r.plays || []).some(x => x.id === op.id)) (r.plays = r.plays || []).push({ id: op.id, d: op.d, min: op.min, kind: op.kind }); }
     else if (op.op === "play.delete") Object.values(rackets).forEach(r => { r.plays = (r.plays || []).filter(x => x.id !== op.id); });
     else if (op.op === "profile.put") profile = { ...op.data };
@@ -531,7 +583,7 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
   function renderAfterSync() {
     // Don't overwrite a field the person is typing in.
     const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
-    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings();
+    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings(); renderJobs();
   }
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
@@ -539,7 +591,7 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
   }
   function renderSync() {
     const chip = $("sync-chip"), note = $("store-note"), n = outbox.length;
-    $("account").hidden = !!user && signedIn !== false;
+    $("account").hidden = !!user && signedIn !== false && !resetToken;
     $("app").hidden = !user;
     $("signout").hidden = !user;
     $("who").textContent = user ? "Signed in as " + (user.name ? user.name + " (" + user.email + ")" : user.email) + "." : "";
@@ -689,7 +741,7 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
     // The day follows today (the app can sit open in the background for days) unless the person picked one.
     if (!$("play-date").value || !playDatePicked) $("play-date").value = today();
     $("play-date").max = today();
-    renderRestring();
+    renderRestring(); renderJobs();
   }
   let showAllPlays = false, playDatePicked = false;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
@@ -708,7 +760,37 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
     const ul = $("rs-factors"); ul.textContent = "";
     a.factors.forEach(f => { const li = document.createElement("li"), b = document.createElement("b"), sp = document.createElement("span"); b.textContent = f.life_used_pct + "%"; sp.textContent = f.note.replace(/^./, c => c.toUpperCase()); li.append(b, sp); ul.appendChild(li); });
   }
-  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); }
+  function renderJobs() {
+    const r = R(), list = $("jobs"); list.textContent = "";
+    if (!r) return;
+    const short = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.slice(0, 4) === today().slice(0, 4) ? undefined : "numeric" });
+    const what = j => [j.stringName || ({ poly: "Polyester", multi: "Multifilament", syngut: "Synthetic gut", gut: "Natural gut", hybrid: "Hybrid", kevlar: "Aramid" }[j.material] || j.material), j.gauge ? Number(j.gauge).toFixed(2) + " mm" : "", j.strungKg ? fmt(j.strungKg) + " " + unit : ""].filter(Boolean).join(" · ");
+    const row = (label, hours, j) => {
+      const li = document.createElement("li");
+      const t = document.createElement("span"); t.className = "t"; t.textContent = label;
+      const k = document.createElement("span"); k.className = "k"; k.textContent = hours + " h";
+      li.append(t, k);
+      if (j) {
+        const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove these strings from the history");
+        del.onclick = () => { if (!confirm("Remove these strings from the history?")) return; r.jobs = r.jobs.filter(y => y !== j); queue({ op: "job.delete", id: j.id }); renderJobs(); };
+        li.append(del);
+      } else li.append(document.createElement("span"));
+      list.appendChild(li);
+    };
+    if (r.strungOn) row("Now: " + what(r) + ", since " + short(r.strungOn), hrs(minutesBetween(r.plays, r.strungOn, null)));
+    const past = (r.jobs || []).slice().sort((a, b) => b.to.localeCompare(a.to));
+    past.forEach(j => row(short(j.from) + " – " + short(j.to) + ": " + what(j) + ", " + REASON_NAMES[j.reason], hrs(minutesBetween(r.plays, j.from, j.to)), j));
+    $("jobs-empty").hidden = past.length > 0;
+    const stats = stringStats(rackets), ul = $("by-string-list"); ul.textContent = "";
+    $("by-string").hidden = !stats.length;
+    stats.forEach(st => {
+      const li = document.createElement("li"), b = document.createElement("b"), sp = document.createElement("span");
+      b.textContent = st.avgHours + " h";
+      sp.textContent = st.string + ": average over " + st.jobs + (st.jobs === 1 ? " set" : " sets") + (st.jobs > 1 ? " (" + st.minHours + "–" + st.maxHours + " h)" : "") + (st.broke ? ", broke " + st.broke + "×" : "") + (st.dead ? ", went dead " + st.dead + "×" : "");
+      li.append(b, sp); ul.appendChild(li);
+    });
+  }
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); renderJobs(); }
 
   // ---------- court bookings ----------
   const clubTz = () => DEFAULT_TZ;
@@ -906,7 +988,7 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
     current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false;
     // A tap belongs to the racket it was made on: start fresh so it can't be saved to (or calibrate) this one.
     if (last && !lastIsSample) { last = null; liveTaps = []; setStatus("Tap " + R().name + " to measure it."); }
-    renderSettings(); renderReadout(); renderHistory(); renderPlays();
+    renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs(); $("rs-form").hidden = true;
   };
   $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); });
   $("dur-picks").addEventListener("change", e => {
@@ -1007,7 +1089,37 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
     setStatus("Calibrated. This tap now reads " + fmt(kg) + " " + unit + " and is saved as the starting point for tension loss.");
   };
   $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
-  const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); };
+  const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); renderJobs(); };
+  // ---------- restring ----------
+  $("rs-new").onclick = () => {
+    const r = R(); if (!r) return;
+    $("rs-day").value = today(); $("rs-day").max = today();
+    $("rs-name").value = r.stringName || ""; $("rs-gauge").value = r.gauge; $("rs-mat").value = r.material;
+    $("rs-kg-label").textContent = "Tension (" + unit + ")"; $("rs-kg").value = r.strungKg ? fmt(r.strungKg) : "";
+    $("rs-err").hidden = true; $("rs-form").hidden = false; $("rs-new").hidden = true;
+    $("rs-form").scrollIntoView({ block: "nearest", behavior: "smooth" });
+  };
+  const closeRestring = () => { $("rs-form").hidden = true; $("rs-new").hidden = false; };
+  $("rs-cancel").onclick = closeRestring;
+  $("rs-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const r = R(), err = m => { $("rs-err").textContent = m; $("rs-err").hidden = false; };
+    const d = $("rs-day").value || today();
+    if (d > today()) return err("That day hasn't happened yet.");
+    if (r.strungOn && d < r.strungOn) return err("That's before the current strings went in (" + r.strungOn + ").");
+    const t = parseFloat($("rs-kg").value), kg = isFinite(t) && t > 0 ? +(unit === "lb" ? t / LB : t).toFixed(2) : null;
+    if (kg !== null && (kg < 10 || kg > 36)) return err("Tension " + t + " " + unit + " looks out of range. Check the kg / lb switch at the top.");
+    const g = parseFloat($("rs-gauge").value);
+    if (!(g >= 1.05 && g <= 1.45)) return err("Gauge should be between 1.05 and 1.45 mm.");
+    const why = (document.querySelector('input[name="rs-why"]:checked') || {}).value || "routine";
+    // The strings coming out go to the history (unless this corrects a restring made the same day).
+    const job = r.strungOn !== d ? currentJob(r, uid(), d, why) : null;
+    if (job) addJob(current, job);
+    Object.assign(r, { strungOn: d, stringName: $("rs-name").value.trim() || null, gauge: g, material: $("rs-mat").value, strungKg: kg });
+    persist(current); closeRestring(); renderAll();
+    setStatus((job ? "Saved the old strings to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "") + "Tap the new strings now and press Calibrate on last tap for the best readings.");
+    $("status").scrollIntoView({ block: "center", behavior: "smooth" });
+  });
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawSpectrum(); drawTrend(); }, 100); });
@@ -1070,8 +1182,9 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
       if (!confirm("Replace your rackets with the " + n + (n === 1 ? " racket" : " rackets") + " in " + f.name + "? Rackets that aren't in the file are deleted on every device.")) return;
       Object.keys(rackets).filter(id => !list[id]).forEach(id => { delete rackets[id]; removeStored(id); });
       Object.entries(list).forEach(([id, r]) => {
-        const readings = r.readings || [], plays = r.plays || [];
-        rackets[id] = { ...r, readings: [], plays: [] }; persist(id);
+        const readings = r.readings || [], plays = r.plays || [], jobs = r.jobs || [];
+        rackets[id] = { ...r, readings: [], plays: [], jobs: [] }; persist(id);
+        jobs.forEach(j => { if (j && j.from && j.to && j.reason) addJob(id, { id: j.id, from: j.from, to: j.to, reason: j.reason, stringName: j.stringName ?? null, material: j.material, gauge: j.gauge, strungKg: j.strungKg ?? null }); });
         readings.forEach(x => { if (rackets[id].readings.some(y => y.id && y.id === x.id)) return; addReading(id, { id: x.id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }); });
         plays.forEach(p => { if (p && p.d && p.min && p.kind) addPlay(id, { id: p.id, d: p.d, min: p.min, kind: p.kind }); });
       });
@@ -1082,33 +1195,70 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
   };
 
   // ---------- accounts (Neon Auth through this app's /api/auth) ----------
-  let creating = false;
-  function setMode(c) {
-    creating = c;
-    $("f-name").hidden = !c; $("acct-name").required = c;
-    $("acct-pass").autocomplete = c ? "new-password" : "current-password";
-    $("acct-go").textContent = c ? "Create account" : "Sign in";
-    if (!user) $("h-account").textContent = c ? "Create an account" : "Sign in";
-    $("acct-switch").textContent = c ? "Have an account? Sign in" : "New here? Create an account";
+  // Forms: "signin", "create", "forgot" (email me a reset link) and "reset" (choose a new password,
+  // reached from the emailed link, which comes back here with ?token=...).
+  let mode = "signin", creating = false;
+  const INTRO = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
+  function setForm(m) {
+    mode = m; creating = m === "create";
+    $("f-name").hidden = !creating; $("acct-name").required = creating;
+    $("f-email").hidden = m === "reset"; $("acct-email").required = m !== "reset";
+    $("f-pass").hidden = m === "forgot"; $("acct-pass").required = m !== "forgot";
+    $("acct-pass").autocomplete = m === "signin" ? "current-password" : "new-password";
+    $("acct-pass-label").textContent = m === "reset" ? "New password (8 or more characters)" : "Password";
+    $("acct-go").textContent = { signin: "Sign in", create: "Create account", forgot: "Email me a reset link", reset: "Set new password" }[m];
+    if (!user || m === "reset") $("h-account").textContent = { signin: "Sign in", create: "Create an account", forgot: "Reset your password", reset: "Choose a new password" }[m];
+    if (!user || m === "reset") $("account-intro").textContent = m === "forgot" ? "Enter your account's email and we'll send a link to choose a new password."
+      : m === "reset" ? "Pick a new password for your account." : INTRO;
+    $("acct-switch").textContent = m === "signin" ? "New here? Create an account" : "Back to sign in";
+    $("acct-forgot").hidden = m !== "signin";
     $("acct-err").hidden = true;
   }
-  $("acct-switch").onclick = () => setMode(!creating);
+  const setMode = c => setForm(c ? "create" : "signin");
+  $("acct-switch").onclick = () => { $("acct-ok").hidden = true; setForm(mode === "signin" ? "create" : "signin"); };
+  $("acct-forgot").onclick = () => { $("acct-ok").hidden = true; setForm("forgot"); $("acct-email").focus(); };
+  function endReset(msg) {
+    resetToken = null;
+    try { history.replaceState(null, "", location.pathname); } catch {}
+    setForm("signin"); renderSync();
+    if (msg) { $("acct-ok").textContent = msg; $("acct-ok").hidden = false; }
+  }
   const authCall = async (path, body) => {
     const res = await fetch("api/auth/" + path, { method: body === undefined ? "GET" : "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
     const data = await res.json().catch(() => null);
     return { ok: res.ok, status: res.status, data };
   };
+  async function forgot(email) {
+    const redirectTo = location.origin + location.pathname;
+    let res = await authCall("request-password-reset", { email, redirectTo });
+    if (res.status === 404) res = await authCall("forget-password", { email, redirectTo }); // older Better Auth name
+    if (!res.ok && res.status !== 400) throw new Error((res.data && (res.data.message || res.data.error)) || "That didn't work. Try again.");
+    // Same answer whether or not the email has an account, so the form can't be used to find accounts.
+    setForm("signin");
+    $("acct-ok").textContent = "If " + email + " has an account, a reset link is on its way. Open it, choose a new password, then sign in here. Check spam if it doesn't arrive in a few minutes.";
+    $("acct-ok").hidden = false;
+  }
+  async function resetPassword(newPassword) {
+    const res = await authCall("reset-password", { newPassword, token: resetToken });
+    if (!res.ok) {
+      const code = res.data && (res.data.code || res.data.message || "");
+      throw new Error(/token/i.test(String(code)) ? "This reset link has expired or was already used. Ask for a new one with Forgot password?" : (res.data && res.data.message) || "That didn't work. Try again.");
+    }
+    endReset("Password changed. Sign in with your new password.");
+  }
   $("account-form").addEventListener("submit", async e => {
     e.preventDefault();
-    const err = $("acct-err"), go = $("acct-go"); err.hidden = true; go.disabled = true;
+    const err = $("acct-err"), go = $("acct-go"); err.hidden = true; $("acct-ok").hidden = true; go.disabled = true;
     const email = $("acct-email").value.trim(), password = $("acct-pass").value;
     try {
+      if (mode === "forgot") return await forgot(email);
+      if (mode === "reset") { $("acct-pass").value = ""; return await resetPassword(password); }
       const res = creating
         ? await authCall("sign-up/email", { name: $("acct-name").value.trim() || email.split("@")[0], email, password })
         : await authCall("sign-in/email", { email, password });
       if (!res.ok) {
         const msg = res.data && (res.data.message || res.data.error);
-        err.textContent = res.status === 401 ? "That email and password don't match." : msg || "That didn't work. Try again.";
+        err.textContent = res.status === 401 ? "That email and password don't match. Forgot it? Use the link below." : msg || "That didn't work. Try again.";
         err.hidden = false; return;
       }
       const session = await authCall("get-session");
@@ -1122,16 +1272,23 @@ import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.
       start();
       loadTokens();
       setStatus(wasCreating ? "Welcome, " + (user.name || user.email) + ". Add your first racket below." : "Signed in as " + (user.name || user.email) + ".");
-    } catch { err.textContent = "Can't reach the server. Check your connection and try again."; err.hidden = false; }
+    } catch (e2) { err.textContent = e2 && e2.message && mode !== "signin" && mode !== "create" ? e2.message : "Can't reach the server. Check your connection and try again."; err.hidden = false; }
     finally { go.disabled = false; }
   });
+  // Back from the emailed link: ?token=... to choose a new password, or ?error=INVALID_TOKEN.
+  if (resetToken) { setForm("reset"); renderSync(); $("account").scrollIntoView(); }
+  else if (params.get("error")) {
+    resetToken = null; setForm("forgot"); renderSync();
+    $("acct-err").textContent = "That reset link has expired or was already used. Enter your email for a new one."; $("acct-err").hidden = false;
+    try { history.replaceState(null, "", location.pathname); } catch {}
+  }
   $("signout").onclick = async () => {
     if (outbox.length && !confirm(outbox.length + " changes haven't synced yet and will be lost from this device. Sign out anyway?")) return;
     try { await authCall("sign-out", {}); } catch {}
     try { ["rackets", "outbox", "last-sync", "refused", "profile"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
     user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
     $("tok-list").textContent = ""; $("tok-show").hidden = true; $("tok-url").value = "";
-    $("h-account").textContent = "Sign in"; $("account-intro").textContent = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
+    $("h-account").textContent = "Sign in"; $("account-intro").textContent = INTRO;
     $("acct-email").value = "";
     renderSync();
   };

@@ -56,5 +56,5 @@ export async function startServer({ port = 3000, useDatabaseUrl = false } = {}) 
     }
   });
   await new Promise((r) => server.listen(port, r));
-  return { origin, close: () => new Promise((r) => server.close(r)), localAuth: !!localAuth };
+  return { origin, close: () => new Promise((r) => server.close(r)), localAuth: !!localAuth, mail: localAuth ? localAuth.mail : [] };
 }

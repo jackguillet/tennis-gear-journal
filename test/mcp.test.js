@@ -79,7 +79,7 @@ test("MCP handshake and tool list", async () => {
   const note = await fetch(link, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
   assert.equal(note.status, 202);
   const list = await mcp(link, "tools/list");
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["add_court_booking", "cancel_court_booking", "delete_session", "list_court_bookings", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile"]);
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["add_court_booking", "cancel_court_booking", "delete_session", "list_court_bookings", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile", "string_history"]);
   assert.equal((await fetch(link)).status, 405);
 });
 
@@ -132,6 +132,26 @@ test("list, delete, restring and profile", async () => {
   assert.equal(sync.data.rackets.v9.stringName, "RPM Blast 1.25");
   assert.equal(sync.data.rackets.v8.plays.length, 1);
   assert.deepEqual(sync.data.profile, { level: "4.0", style: "heavy_spin" });
+});
+
+test("a restring saves the old strings to the history, and string_history compares strings", async () => {
+  // v9 has RPM Blast in since Oct 26 (above). Log a session on it, then it breaks and is restrung.
+  await tool(link, "log_play", { racket: "v9", kind: "singles", hours: 2, date: "2026-10-27" });
+  let out = await tool(link, "record_restring", { racket: "v9", date: "2026-10-28", tension_lb: 50, string_name: "ALU Power 1.25", old_strings: "broke" });
+  assert.match(out.content[0].text, /Saved the old strings to the history: 2 h from Oct 26, 2026, broke/);
+  // Recording the same restring again doesn't add a second record.
+  await tool(link, "record_restring", { racket: "v9", date: "2026-10-28", tension_lb: 50, string_name: "ALU Power 1.25" });
+  out = await tool(link, "string_history", { racket: "v9" });
+  const { jobs, by_string } = out.structuredContent;
+  assert.equal(jobs.length, 3); // the June strings went to the history at the Oct 26 restring above
+  assert.deepEqual([jobs[0].reason, jobs[0].string], ["still in", "ALU Power 1.25"]);
+  assert.deepEqual([jobs[1].reason, jobs[1].string, jobs[1].hours, jobs[1].came_out], ["broke", "RPM Blast 1.25", 2, "2026-10-28"]);
+  assert.equal(jobs[2].came_out, "2026-10-26");
+  const rpm = by_string.find((s) => s.string.startsWith("RPM Blast"));
+  assert.deepEqual([rpm.jobs, rpm.avgHours, rpm.broke], [1, 2, 1]);
+  assert.equal((await tool(link, "record_restring", { racket: "v9", old_strings: "snapped" })).isError, true);
+  const sync = await jack.call("POST", "/api/sync", { ops: [] });
+  assert.equal(sync.data.rackets.v9.jobs.length, 2);
 });
 
 test("restring advice for every racket, and worn strings say restring now", async () => {

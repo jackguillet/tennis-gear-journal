@@ -14,6 +14,8 @@ const restring = await import(new URL("../public/restring.js", import.meta.url))
 if (typeof restring.restringAdvice !== "function") throw new Error("public/restring.js does not export restringAdvice.");
 const courts = await import(new URL("../public/courts.js", import.meta.url));
 if (typeof courts.toIcs !== "function") throw new Error("public/courts.js does not export toIcs.");
+const jobs = await import(new URL("../public/stringjobs.js", import.meta.url));
+if (typeof jobs.stringStats !== "function") throw new Error("public/stringjobs.js does not export stringStats.");
 new vm.Script(await readFile(new URL("../public/stc.js", import.meta.url), "utf8"), { filename: "public/stc.js" });
 new vm.Script(await readFile(new URL("../public/sw.js", import.meta.url), "utf8"), { filename: "public/sw.js" });
 JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
