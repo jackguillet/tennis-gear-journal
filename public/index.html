@@ -186,8 +186,9 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
       <div class="big" id="big">--<span class="u" id="big-u">kg</span></div>
       <div class="hz" id="hz">-- Hz</div>
     </div>
+    <div class="small" id="bed-line" hidden></div>
     <div class="small" id="strung-line" hidden></div>
-    <div class="status" id="status" aria-live="polite">Hold the racket by the handle and tap the strings near the centre with your fingertip or another racket.</div>
+    <div class="status" id="status" aria-live="polite">Hold the racket by the handle with the phone's bottom edge (where the microphone is) 10–20 cm from the strings. Tap the centre of the strings firmly with the heel of your palm and lift off straight away.</div>
     <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
     <div class="actions">
       <button class="btn primary" id="listen" type="button">Listen for taps</button>
@@ -320,105 +321,19 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
   <section class="card">
     <details>
       <summary>How it works</summary>
-      <p>A tapped string bed rings at one main pitch, usually between 400 and 700 Hz. Tension rises with the square of that pitch. The app finds the pitch, then works out tension from your head size and the weight per metre of your string (its gauge and material).</p>
-      <p>The result is the tension of the whole string bed, which is lower than the tension set on the stringing machine and falls fastest in the first day. Without calibration the number is an estimate, often within 10%. The trend for one racket is reliable either way: use it to see when to restring.</p>
-      <p>Press Listen for taps and allow the microphone. Hold the phone 10–20 cm from the strings, somewhere quiet, and tap the centre of the strings a few times, about a second apart. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
+      <p>A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. Tension rises with the square of that pitch, the head area and the weight per metre of the string (its gauge and material). The app uses the drum-skin formula for an oval head, which Cross and Bower checked against a load cell inside a strung racket and found within a few percent.</p>
+      <p>That gives the tension left in the strung racket, shown under the big number as "in the bed". It is 30–40% lower than the tension set on the stringing machine, even straight after stringing, because the strings relax and lose tension through the grommets. Apps like RacquetTune show this bed number. The big number turns it back into stringing-machine terms using that typical drop, so it can be compared with what you asked your stringer for. Calibrate right after a restring and the app learns your stringer's real drop. Either way the trend for one racket is reliable: use it to see when to restring.</p>
+      <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm, a knuckle or the edge of another racket, and lift off at once: anything left on the strings stops the ring. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
+      <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
     </details>
   </section>
   </div>
 </div>
 
-<script>
+<script type="module">
+import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 (() => {
   "use strict";
-  // ---------- physics ----------
-  const DENSITY = { poly: 1380, multi: 1140, syngut: 1140, gut: 1300, hybrid: 1260, kevlar: 1440 }; // kg/m^3
-  const ASPECT = 1.28;      // head length / width, typical oval
-  const SHAPE = 1.55;       // empirical: clamped oval bed vs ideal membrane, tuned so a fresh 100 sq in poly bed at ~530 Hz reads ~24 kg
-  const PATTERN = { "16x19": 1, "18x20": 1.06, "16x18": 0.98, "18x19": 1.03 }; // denser beds ring higher at the same tension
-  const LB = 2.20462;
-
-  function modelKg(hz, r) {
-    const area = r.head * 6.4516e-4;                      // m^2
-    const b = Math.sqrt(area / (Math.PI * ASPECT)), a = ASPECT * b;
-    const Lm = 2 * a, Lc = 2 * b;
-    const mu = DENSITY[r.material] * Math.PI * Math.pow(r.gauge / 2000, 2); // kg/m
-    const pat = PATTERN[r.pattern] || 1;
-    const N = SHAPE * 8 * mu * hz * hz / (1 / (Lm * Lm) + 1 / (Lc * Lc)) / (pat * pat);
-    return N / 9.80665;
-  }
-  const tensionKg = (hz, r) => modelKg(hz, r) * (r.calib || 1);
-  // A saved reading keeps the setup it was taken with, so a restring or a new calibration
-  // never rewrites old history.
-  const snap = r => ({ head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern, calib: r.calib || 1 });
-  const readingKg = (x, r) => tensionKg(x.hz, x.s ? { ...r, ...x.s } : r);
-
-  // ---------- FFT / pitch ----------
-  function fft(re, im) {
-    const n = re.length;
-    for (let i = 1, j = 0; i < n; i++) {
-      let bit = n >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
-    }
-    for (let len = 2; len <= n; len <<= 1) {
-      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i = 0; i < n; i += len) {
-        let cr = 1, ci = 0;
-        for (let k = 0; k < len / 2; k++) {
-          const ur = re[i + k], ui = im[i + k];
-          const vr = re[i + k + len / 2] * cr - im[i + k + len / 2] * ci;
-          const vi = re[i + k + len / 2] * ci + im[i + k + len / 2] * cr;
-          re[i + k] = ur + vr; im[i + k] = ui + vi;
-          re[i + k + len / 2] = ur - vr; im[i + k + len / 2] = ui - vi;
-          const t = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = t;
-        }
-      }
-    }
-  }
-  const LO = 330, HI = 850;
-  // Analyse one tap that starts at sample `start`.
-  function analyseTap(x, sr, start, end) {
-    const s = start + Math.round(0.012 * sr);             // skip the click of the impact
-    const len = Math.min(Math.round(0.22 * sr), (end || x.length) - s - Math.round(0.005 * sr));
-    if (len < 0.06 * sr) return null;
-    const N = 32768;
-    const re = new Float64Array(N), im = new Float64Array(N);
-    for (let i = 0; i < len; i++) re[i] = x[s + i] * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (len - 1)));
-    fft(re, im);
-    const binHz = sr / N, b0 = Math.floor(LO / binHz), b1 = Math.ceil(HI / binHz);
-    const mag = new Float64Array(b1 - b0 + 1);
-    let best = 0;
-    for (let k = b0; k <= b1; k++) { mag[k - b0] = Math.hypot(re[k], im[k]); if (mag[k - b0] > mag[best]) best = k - b0; }
-    const sorted = Array.from(mag).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
-    const clarity = mag[best] / median;
-    let off = 0;
-    if (best > 0 && best < mag.length - 1) {
-      const l = Math.log(mag[best - 1] + 1e-12), c = Math.log(mag[best] + 1e-12), r = Math.log(mag[best + 1] + 1e-12);
-      off = 0.5 * (l - r) / (l - 2 * c + r || 1);
-    }
-    return { hz: (b0 + best + off) * binHz, clarity, mag, binHz, b0 };
-  }
-  // Find every tap in a recording and return the median result.
-  function analyseRecording(x, sr) {
-    const hop = Math.round(0.005 * sr), env = [];
-    for (let i = 0; i + hop <= x.length; i += hop) { let m = 0; for (let j = i; j < i + hop; j++) m = Math.max(m, Math.abs(x[j])); env.push(m); }
-    const peak = Math.max(...env, 0);
-    if (peak < 0.01) return { error: "The recording is almost silent. Hold the phone closer to the strings and tap harder." };
-    const taps = [], gap = Math.round(0.2 * sr / hop);
-    for (let i = 1; i < env.length; i++) {
-      if (env[i] > peak * 0.15 && env[i] > env[i - 1] * 1.8 && (!taps.length || i - taps[taps.length - 1] > gap)) taps.push(i);
-    }
-    if (!taps.length) taps.push(env.indexOf(peak));
-    const res = taps.map((t, k) => analyseTap(x, sr, t * hop, k + 1 < taps.length ? taps[k + 1] * hop : x.length)).filter(r => r && r.clarity > 6);
-    if (!res.length) return { error: "No clear ring found. Tap the centre of the strings with a fingertip, not the frame, somewhere quiet." };
-    res.sort((p, q) => p.hz - q.hz);
-    const mid = res[res.length >> 1];
-    const spread = res.length > 1 ? (res[res.length - 1].hz - res[0].hz) / mid.hz : 0;
-    return { ...mid, taps: res.length, spread };
-  }
-
   // ---------- state & storage ----------
   const $ = id => document.getElementById(id);
   const prefs = (() => { try { return JSON.parse(localStorage.getItem("sbm-prefs") || "{}"); } catch { return {}; } })();
@@ -606,7 +521,10 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
     if (last && r) {
       $("big").firstChild.nodeValue = fmt(tensionKg(last.hz, r));
       $("hz").textContent = last.hz.toFixed(0) + " Hz";
-    } else { $("big").firstChild.nodeValue = "--"; $("hz").textContent = "-- Hz"; }
+      $("bed-line").textContent = (r.calib && r.calib !== 1 ? "Calibrated to your stringer" : "Estimated stringing-machine tension")
+        + " · " + fmt(bedKg(last.hz, r)) + " " + unit + " in the bed";
+      $("bed-line").hidden = false;
+    } else { $("big").firstChild.nodeValue = "--"; $("hz").textContent = "-- Hz"; $("bed-line").hidden = true; }
     $("sample-chip").hidden = !lastIsSample;
     $("save").disabled = !last || lastIsSample;
     $("cal-go").disabled = !last || lastIsSample;
@@ -748,8 +666,11 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
     if (sample) setStatus("This is a made-up sample so you can see the display. Tap your own racket to measure it.");
     else {
       let msg = res.taps > 1 ? `Median of ${res.taps} taps.` : "One clear tap.";
-      if (res.spread > 0.04) msg += " Taps disagreed by " + (res.spread * 100).toFixed(0) + "%, so tap the same spot each time.";
-      else if (res.taps === 1) msg += " Tap two or three more times for a steadier number.";
+      if (res.dropped) msg += ` Left out ${res.dropped} tap${res.dropped > 1 ? "s" : ""} that rang at a different pitch (a frame hit or a double tap).`;
+      if (res.clipped) msg += " That was louder than the microphone can take, so move the phone a little further from the strings.";
+      else if (res.quiet) msg += " The ring was faint: tap a bit firmer or bring the phone's bottom edge closer.";
+      if (res.spread > 0.02) msg += " Taps disagreed by " + (res.spread * 100).toFixed(1) + "%, so tap the centre each time.";
+      else if (res.taps < 3) msg += " Tap a few more times for a steadier number.";
       setStatus(msg);
     }
     renderReadout();
@@ -781,32 +702,36 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
     if (ctx.state === "suspended") await ctx.resume();
     liveTaps = [];
     const src = ctx.createMediaStreamSource(stream), sr = ctx.sampleRate;
-    const ring = new Float32Array(Math.round(sr * 1.0)); let w = 0, noise = 0.002, armedAt = -1, cool = 0, filled = 0;
+    // Taps are found on a band-passed copy (the band string beds ring in), so a quiet fingertip
+    // ring still stands out from room rumble and handling noise. The analysis uses the raw sound.
+    const ring = new Float32Array(Math.round(sr * 1.0)), bp = bandpass(sr);
+    let w = 0, noise = 0.001, armedAt = -1, cool = 0, filled = 0;
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
       const d = ev.inputBuffer.getChannelData(0); let pk = 0;
-      for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(d[i])); }
+      for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
       filled += d.length;
       if (armedAt < 0) {
         if (cool > 0) cool -= d.length;
-        else if (pk > Math.max(0.02, noise * 8)) armedAt = filled - d.length;
-        else noise = noise * 0.95 + pk * 0.05;
-      } else if (filled - armedAt > 0.3 * sr) {
-        const n = ring.length, seg = new Float32Array(n);
-        for (let i = 0; i < n; i++) seg[i] = ring[(w + i) % n];
-        armedAt = -1; cool = 0.25 * sr;
+        else if (pk > Math.max(0.0015, noise * 5)) armedAt = filled - d.length;
+        else noise = noise * 0.9 + pk * 0.1;
+      } else if (filled - armedAt > 0.32 * sr) {
+        // just this tap: from 40 ms before it was heard to now
+        const n = Math.min(ring.length, filled - armedAt + Math.round(0.04 * sr)), seg = new Float32Array(n);
+        for (let i = 0; i < n; i++) seg[i] = ring[(w - n + i + ring.length) % ring.length];
+        armedAt = -1; cool = 0.15 * sr;
         const res = analyseRecording(seg, sr);
         if (res.error) { setStatus(res.error, true); return; }
         // live taps build up: show the median of the last five
         liveTaps.push(res); if (liveTaps.length > 5) liveTaps.shift();
         const byHz = liveTaps.slice().sort((p, q) => p.hz - q.hz), mid = byHz[byHz.length >> 1];
         const spread = byHz.length > 1 ? (byHz[byHz.length - 1].hz - byHz[0].hz) / mid.hz : 0;
-        showResult({ ...mid, taps: liveTaps.length, spread }, false);
+        showResult({ ...mid, taps: liveTaps.length, spread, clipped: res.clipped, quiet: res.quiet, dropped: 0 }, false);
       }
     };
     src.connect(proc); proc.connect(ctx.destination);
     live = true; $("listen").textContent = "Listening… tap the strings"; $("listen").classList.add("listening");
-    setStatus("Listening. Tap the centre of the strings.");
+    setStatus("Listening. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
   }
   function stopListening() {
     live = false;
@@ -901,7 +826,7 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
       setStatus("These strings went in " + age + " days ago and have lost tension since, so calibrating now would hide that loss. If you just restrung, change Strung on to today first.", true);
       return;
     }
-    r.calib = kg / modelKg(last.hz, r); r.calibAt = Date.now();
+    r.calib = +(kg / machineKg(last.hz, r)).toFixed(5); r.calibAt = Date.now();
     r.strungKg = +kg.toFixed(2);
     if (!r.strungOn) r.strungOn = new Date().toLocaleDateString("en-CA");
     addReading(current, { t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
