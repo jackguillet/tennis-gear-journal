@@ -79,7 +79,7 @@ test("MCP handshake and tool list", async () => {
   const note = await fetch(link, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
   assert.equal(note.status, 202);
   const list = await mcp(link, "tools/list");
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["delete_session", "list_rackets", "list_sessions", "log_play", "record_restring", "set_player_profile"]);
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["delete_session", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile"]);
   assert.equal((await fetch(link)).status, 405);
 });
 
@@ -132,6 +132,24 @@ test("list, delete, restring and profile", async () => {
   assert.equal(sync.data.rackets.v9.stringName, "RPM Blast 1.25");
   assert.equal(sync.data.rackets.v8.plays.length, 1);
   assert.deepEqual(sync.data.profile, { level: "4.0", style: "heavy_spin" });
+});
+
+test("restring advice for every racket, and worn strings say restring now", async () => {
+  let out = await tool(link, "restring_advice", {});
+  assert.equal(out.isError, undefined, JSON.stringify(out));
+  const byId = Object.fromEntries(out.structuredContent.rackets.map((r) => [r.id, r]));
+  // Jack's rackets have hardly been played; how long ago they were strung depends on today's date.
+  assert.ok(["good", "soon", "now"].includes(byId.v8.status), JSON.stringify(byId.v8));
+  assert.equal(byId.v8.hours_on_strings, 1);
+  assert.ok(byId.v8.factors.some((f) => f.factor === "age"));
+  out = await tool(link, "list_rackets", {});
+  assert.ok(out.structuredContent.rackets.every((r) => r.restring && r.restring.status));
+  // Sam's racket strung Oct 1 with 30 h of drills is done
+  for (let i = 0; i < 6; i++) await tool(samLink, "log_play", { kind: "drills", hours: 5, date: "2026-10-1" + i });
+  out = await tool(samLink, "restring_advice", { racket: "aero" });
+  assert.equal(out.structuredContent.rackets[0].status, "now");
+  assert.match(out.content[0].text, /Restring now/);
+  assert.match(out.content[0].text, /set level and style of play/);
 });
 
 test("a link only reaches its own player", async () => {

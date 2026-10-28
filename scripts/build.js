@@ -10,6 +10,8 @@ if (!scripts.length) throw new Error("public/index.html has no inline script.");
 scripts.forEach((code, i) => new vm.Script(code, { filename: `public/index.html <script ${i + 1}>` })); // throws on a syntax error
 const tension = await import(new URL("../public/tension.js", import.meta.url));
 if (typeof tension.analyseRecording !== "function") throw new Error("public/tension.js does not export analyseRecording.");
+const restring = await import(new URL("../public/restring.js", import.meta.url));
+if (typeof restring.restringAdvice !== "function") throw new Error("public/restring.js does not export restringAdvice.");
 new vm.Script(await readFile(new URL("../public/sw.js", import.meta.url), "utf8"), { filename: "public/sw.js" });
 JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
 
