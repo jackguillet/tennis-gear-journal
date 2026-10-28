@@ -119,11 +119,11 @@ input, select { font: 16px var(--f-body); color: var(--ink); background: var(--b
 
 canvas#trend { width: 100%; height: 120px; display: block; }
 ol.hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-ol.hist li { display: grid; grid-template-columns: 1fr auto auto 28px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+ol.hist li { display: grid; grid-template-columns: 1fr auto auto 36px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 ol.hist .t { color: var(--muted); font-size: 14px; }
 ol.hist .k { font: 600 16px var(--f-mono); }
 ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
-ol.hist button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
+ol.hist button, ol.plays button { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0; width: 44px; height: 44px; margin: -8px -8px -8px 0; }
 .empty { color: var(--muted); font-size: 15px; }
 details summary { cursor: pointer; font-weight: 600; }
 .title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -145,10 +145,9 @@ details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15
 .picks input:focus-visible + span { outline: 3px solid var(--optic); outline-offset: 2px; }
 .log-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
 ol.plays { list-style: none; margin: 0; padding: 0; }
-ol.plays li { display: grid; grid-template-columns: 1fr auto 28px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+ol.plays li { display: grid; grid-template-columns: 1fr auto 36px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 ol.plays .t { color: var(--muted); font-size: 14px; }
 ol.plays .k { font: 500 15px var(--f-mono); }
-ol.plays button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
 .split { font-size: 14px; color: var(--muted); }
 .restring-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .wear { height: 10px; border-radius: 999px; background: var(--court-soft); overflow: hidden; }
@@ -447,6 +446,11 @@ import { restringAdvice } from "./restring.js";
       if (!res.ok) throw new Error(body.error || "HTTP " + res.status);
       signedIn = true;
       outbox = outbox.filter(o => !sent.includes(o));
+      if (body.refused && body.refused.length) {
+        // The server skipped these changes (a value out of range) and saved the rest. Keep a copy on the device.
+        lsSet(key("refused"), { at: Date.now(), refused: body.refused });
+        refused = body.refused.length === 1 ? body.refused[0].error : body.refused.length + " changes were refused, for example: " + body.refused[0].error;
+      }
       if (body.user) { user = { ...user, ...body.user }; lsSet("sbm-user", user); }
       rackets = body.rackets || {};
       if (body.profile) profile = body.profile;
@@ -566,7 +570,7 @@ import { restringAdvice } from "./restring.js";
       const t = document.createElement("span"); t.className = "t"; t.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
       const k = document.createElement("span"); k.className = "k"; k.textContent = fmt(kg) + " " + unit;
       const h = document.createElement("span"); h.className = "h";
-      if (base && x.t !== base.t) { const loss = (1 - kg / readingKg(base, r)) * 100; h.textContent = (loss >= 0 ? "−" : "+") + Math.abs(loss).toFixed(0) + "%"; }
+      if (base && x.t > base.t) { const loss = (1 - kg / readingKg(base, r)) * 100; h.textContent = (loss >= 0 ? "−" : "+") + Math.abs(loss).toFixed(0) + "%"; }
       else h.textContent = x.hz.toFixed(0) + " Hz";
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this reading");
       del.onclick = () => { removeReading(current, x); renderHistory(); };
@@ -575,9 +579,10 @@ import { restringAdvice } from "./restring.js";
     drawTrend();
     renderRestring();
   }
-  // first reading since the last calibration (or ever) is the reference for loss %
+  // The first reading on the current strings (and since the last calibration) is the reference for loss %.
   function baseline(r) {
-    const rs = r.readings.filter(x => !r.calibAt || x.t >= r.calibAt).sort((a, b) => a.t - b.t);
+    const since = Math.max(r.strungOn ? Date.parse(r.strungOn + "T00:00:00") : 0, r.calibAt || 0);
+    const rs = r.readings.filter(x => x.t >= since).sort((a, b) => a.t - b.t);
     return rs[0] || null;
   }
   // ---------- play ----------
@@ -621,11 +626,12 @@ import { restringAdvice } from "./restring.js";
       li.append(t, k, del); list.appendChild(li);
     });
     $("plays-more").hidden = showAllPlays || all.length <= 5;
-    if (!$("play-date").value) $("play-date").value = today();
+    // The day follows today (the app can sit open in the background for days) unless the person picked one.
+    if (!$("play-date").value || !playDatePicked) $("play-date").value = today();
     $("play-date").max = today();
     renderRestring();
   }
-  let showAllPlays = false;
+  let showAllPlays = false, playDatePicked = false;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
 
   function renderRestring() {
@@ -769,6 +775,7 @@ import { restringAdvice } from "./restring.js";
     live = true; $("listen").textContent = "Listening… tap the strings"; $("listen").classList.add("listening");
     setStatus("Listening. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
   }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && live) stopListening(); });
   function stopListening() {
     live = false;
     try { proc && proc.disconnect(); stream && stream.getTracks().forEach(t => t.stop()); ctx && ctx.close(); } catch {}
@@ -795,7 +802,12 @@ import { restringAdvice } from "./restring.js";
     setStatus("Saved " + fmt(tensionKg(last.hz, r)) + " " + unit + " for " + r.name + ".");
     $("save").disabled = true;
   };
-  $("racket").onchange = e => { current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false; renderSettings(); renderReadout(); renderHistory(); renderPlays(); };
+  $("racket").onchange = e => {
+    current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false;
+    // A tap belongs to the racket it was made on: start fresh so it can't be saved to (or calibrate) this one.
+    if (last && !lastIsSample) { last = null; liveTaps = []; setStatus("Tap " + R().name + " to measure it."); }
+    renderSettings(); renderReadout(); renderHistory(); renderPlays();
+  };
   $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); });
   $("dur-picks").addEventListener("change", e => {
     prefs.dur = +e.target.value; savePrefs();
@@ -814,13 +826,15 @@ import { restringAdvice } from "./restring.js";
     const d = $("play-date").value || today();
     if (d > today()) { setPlayMsg("That day hasn't happened yet."); return; }
     addPlay(current, { d, min, kind });
-    $("play-date").value = today();
+    $("play-date").value = today(); playDatePicked = false;
     renderPlays(); renderSettings();
     const total = onTheseStrings(r).reduce((a, p) => a + p.min, 0);
     setPlayMsg("Logged " + hrs(min) + " h of " + KIND_NAME[kind].toLowerCase() + ". " + hrs(total) + " h on these strings.");
   };
   function setPlayMsg(m) { $("hours-line").textContent = m; }
   $("plays-more").onclick = () => { showAllPlays = true; renderPlays(); };
+  $("play-date").addEventListener("change", e => { playDatePicked = !!e.target.value && e.target.value !== today(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) renderPlays(); });
   $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); renderRestring(); };
   $("p-style").onchange = e => { profile.style = e.target.value || null; saveProfile(); renderRestring(); };
   const bind = (id, key, num) => $(id).addEventListener("change", e => {
@@ -833,12 +847,22 @@ import { restringAdvice } from "./restring.js";
   });
   $("r-strung").addEventListener("change", e => {
     const r = R(), v = parseFloat(e.target.value);
-    r.strungKg = isFinite(v) ? +(unit === "lb" ? v / LB : v).toFixed(2) : null;
+    let kg = isFinite(v) && v > 0 ? +(unit === "lb" ? v / LB : v).toFixed(2) : null;
+    // Typed lb while the app is in kg (or the other way round): say so rather than saving a value the server refuses.
+    if (kg !== null && (kg < 10 || kg > 36)) {
+      setStatus("Strung tension " + v + " " + unit + " looks out of range. Strung tensions are usually 18–30 kg (40–65 lb); check the kg / lb switch at the top.", true);
+      renderSettings(); return;
+    }
+    r.strungKg = kg;
     persist(current); renderSettings();
   });
   $("r-strungon").addEventListener("change", e => { R().strungOn = e.target.value || null; persist(current); renderSettings(); renderPlays(); });
   $("r-string").addEventListener("change", e => { R().stringName = e.target.value.trim() || null; persist(current); renderSettings(); });
-  $("r-weight").addEventListener("change", e => { const v = parseInt(e.target.value, 10); R().weight = isFinite(v) ? v : null; persist(current); });
+  $("r-weight").addEventListener("change", e => {
+    const v = parseInt(e.target.value, 10);
+    R().weight = isFinite(v) && v > 0 ? Math.min(400, Math.max(200, v)) : null;
+    persist(current); renderSettings();
+  });
   bind("r-name", "name"); bind("r-head", "head", true); bind("r-gauge", "gauge", true); bind("r-mat", "material"); bind("r-pattern", "pattern");
   $("add").onclick = () => {
     const id = newId(); rackets[id] = blank("Racket " + (Object.keys(rackets).length + 1));
@@ -862,7 +886,12 @@ import { restringAdvice } from "./restring.js";
       setStatus("These strings went in " + age + " days ago and have lost tension since, so calibrating now would hide that loss. If you just restrung, change Strung on to today first.", true);
       return;
     }
-    r.calib = +(kg / machineKg(last.hz, r)).toFixed(5); r.calibAt = Date.now();
+    const factor = kg / machineKg(last.hz, r);
+    if (factor < 0.3 || factor > 3) {
+      setStatus("This tap reads very far from " + fmt(kg) + " " + unit + ". Check the head size, gauge and string type above, and that this tap was on this racket.", true);
+      return;
+    }
+    r.calib = +factor.toFixed(5); r.calibAt = Date.now();
     r.strungKg = +kg.toFixed(2);
     if (!r.strungOn) r.strungOn = new Date().toLocaleDateString("en-CA");
     addReading(current, { t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
@@ -928,6 +957,8 @@ import { restringAdvice } from "./restring.js";
       const data = JSON.parse(await f.text());
       const list = data && data.rackets;
       if (!list || typeof list !== "object" || !Object.values(list).every(r => r && r.name && Array.isArray(r.readings))) throw 0;
+      const n = Object.keys(list).length;
+      if (!confirm("Replace your rackets with the " + n + (n === 1 ? " racket" : " rackets") + " in " + f.name + "? Rackets that aren't in the file are deleted on every device.")) return;
       Object.keys(rackets).filter(id => !list[id]).forEach(id => { delete rackets[id]; removeStored(id); });
       Object.entries(list).forEach(([id, r]) => {
         const readings = r.readings || [], plays = r.plays || [];
