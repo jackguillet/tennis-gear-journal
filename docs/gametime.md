@@ -39,6 +39,9 @@ Editing a booking: `GET /scheduling/index/editbooking/sport/2/conf/<conf>?bk=<bk
 
 ## Other GameTime feeds (second recording, 2026-10-28)
 
+The GameTime button now uses `/cne/index/listdata` for its Clinics & events tab (adult events only, next 28 days) and `/scheduling/gameseeker/rosteravailable/sport/2` for its Partners tab. Partner contact details stay in the browser and are never posted to the app.
+
+
 - `GET /account/jsonlistupcoming?wltext=1&family=member&limit=50&order=asc` returns the member's upcoming bookings (`date` "Thursday Oct 29, 2026", `time` "1:00pm - 2:15pm", `place`, `booking_id`, `conf_id`, `sport_id`, `players`). The GameTime button uses it first. Editing a booking gives it a new `booking_id` but keeps the `conf_id`, so rows are keyed on the confirmation number.
 - `GET /cne/index/listdata?...` and `/cne/event/view/eventid/<id>` list classes and events (category, dates, price, pros, spots `participants.text` such as "4/18", waitlist).
 - `/scheduling/waitlist/index/sport/2`: the court waitlist (HTML).
