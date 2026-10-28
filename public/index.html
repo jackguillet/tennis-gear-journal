@@ -274,6 +274,18 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       </div>
       <p class="small err-text" id="cal-err" hidden></p>
     </details>
+    <details id="gt-sub">
+      <summary>GameTime button: open courts and your bookings</summary>
+      <p>A bookmark you tap while you're on the Seattle Tennis Club GameTime site (stc.gametime.net), signed in. It opens a clean view of open courts by day; tap a court to go straight to GameTime's booking form for it. It also copies your own GameTime bookings here and into your court calendar, and removes ones you cancelled. It only reads; you always finish a booking in GameTime.</p>
+      <div class="row-btns" style="margin-top:10px"><button class="btn" id="gt-new" type="button">Make my GameTime button</button></div>
+      <div id="gt-show" hidden style="margin-top:10px">
+        <p><b>On a computer:</b> drag this to your bookmarks bar: <a class="btn" id="gt-link" href="#">🎾 STC courts</a></p>
+        <p><b>On iPhone:</b> tap Copy, then in Safari bookmark any page (Share, Add Bookmark) and name it "STC courts". Open Bookmarks, tap Edit, open that bookmark and paste over its address. On stc.gametime.net, type "STC courts" in the address bar and tap the bookmark.</p>
+        <div class="row-btns" style="margin-top:6px"><button class="btn" id="gt-copy" type="button">Copy button code</button></div>
+        <p class="small">The button holds a private key that can only add court bookings to your account. Make a new one to turn the old one off.</p>
+      </div>
+      <p class="small err-text" id="gt-err" hidden></p>
+    </details>
   </section>
 
   <section class="card" aria-labelledby="h-hist">
@@ -1183,6 +1195,27 @@ import { toIcs, bookingTitle, zonedToUtc, DEFAULT_TZ } from "./courts.js";
   $("cal-copy").onclick = async () => {
     try { await navigator.clipboard.writeText($("cal-url").value); $("cal-copy").textContent = "Copied"; setTimeout(() => { $("cal-copy").textContent = "Copy link"; }, 2000); }
     catch { $("cal-url").select(); }
+  };
+  let gtCode = "";
+  function gtErr(msg) { $("gt-err").textContent = msg || ""; $("gt-err").hidden = !msg; }
+  $("gt-new").onclick = async () => {
+    gtErr(""); $("gt-new").disabled = true;
+    try {
+      const old = ((await tokensCall("GET")).tokens || []).filter(t => t.scope === "gametime");
+      for (const t of old) await tokensCall("DELETE", { id: t.id });
+      const out = await tokensCall("POST", { label: "GameTime button", scope: "gametime" });
+      const base = new URL(".", location.href).href;
+      gtCode = "javascript:(function(){window.__sbmGT={key:'" + out.token.secret + "',api:'" + base + "api/gametime'};var s=document.createElement('script');s.charset='utf-8';s.src='" + base + "stc.js?'+Date.now();document.body.appendChild(s);})()";
+      $("gt-link").href = gtCode;
+      $("gt-show").hidden = false;
+      renderTokens(out.tokens);
+    } catch (e) { gtErr(navigator.onLine ? e.message : "You're offline. Connect to make the button."); }
+    finally { $("gt-new").disabled = false; }
+  };
+  $("gt-link").onclick = e => { e.preventDefault(); gtErr("Drag this to your bookmarks bar, then use it on stc.gametime.net."); };
+  $("gt-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText(gtCode); $("gt-copy").textContent = "Copied"; setTimeout(() => { $("gt-copy").textContent = "Copy button code"; }, 2000); }
+    catch { prompt("Copy this:", gtCode); }
   };
   setTimeout(loadTokens, 1500);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadTokens(); });
