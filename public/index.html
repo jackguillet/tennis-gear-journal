@@ -94,7 +94,7 @@ h2 { font: 700 18px/1.2 var(--f-display); text-transform: uppercase; letter-spac
 canvas#spec { width: 100%; height: 110px; display: block; border-top: 1px solid var(--line); }
 .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .actions .wide { grid-column: 1 / -1; }
-button.btn, label.btn {
+button.btn, label.btn, a.btn {
   font: 600 16px var(--f-body); border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: center;
   border: 1px solid var(--court); background: transparent; color: var(--court);
 }
@@ -148,6 +148,11 @@ ol.plays { list-style: none; margin: 0; padding: 0; }
 ol.plays li { display: grid; grid-template-columns: 1fr auto 36px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 ol.plays .t { color: var(--muted); font-size: 14px; }
 ol.plays .k { font: 500 15px var(--f-mono); }
+ol.bookings li { grid-template-columns: 1fr auto 36px 36px; }
+ol.bookings .t b { color: var(--ink); font-weight: 600; }
+ol.bookings li.past { opacity: .7; }
+#courts details { margin-top: 12px; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .split { font-size: 14px; color: var(--muted); }
 .restring-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .wear { height: 10px; border-radius: 999px; background: var(--court-soft); overflow: hidden; }
@@ -231,6 +236,44 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     </div>
     <ol class="plays" id="plays"></ol>
     <button class="linkbtn" id="plays-more" type="button" hidden>Show older sessions</button>
+  </section>
+
+  <section class="card" aria-labelledby="h-courts" id="courts" hidden>
+    <h2 id="h-courts">Court bookings</h2>
+    <p class="small" id="courts-line">Add the courts you book at the club. Each one goes in your calendar, and once it ends the time is logged on your racket.</p>
+    <ol class="plays bookings" id="bookings"></ol>
+    <details id="bk-add">
+      <summary>Add a booking</summary>
+      <div class="grid2" style="margin-top:10px">
+        <div class="field"><label for="bk-date">Day</label><input id="bk-date" type="date"></div>
+        <div class="field"><label for="bk-time">Start</label><input id="bk-time" type="time" step="900" value="18:00"></div>
+        <div class="field"><label for="bk-len">Length</label>
+          <select id="bk-len"><option value="60">1 hour</option><option value="90" selected>1½ hours</option><option value="120">2 hours</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="180">3 hours</option></select>
+        </div>
+        <div class="field"><label for="bk-kind">Type of play</label>
+          <select id="bk-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option><option value="ball_machine">Ball machine</option><option value="serves">Serves</option></select>
+        </div>
+        <div class="field"><label for="bk-court">Court</label><input id="bk-court" type="text" maxlength="40" placeholder="e.g. Court 3"></div>
+        <div class="field"><label for="bk-racket">Racket</label><select id="bk-racket"></select></div>
+      </div>
+      <div class="row-btns" style="margin-top:10px"><button class="btn primary" id="bk-save" type="button">Save booking</button></div>
+      <p class="small err-text" id="bk-err" hidden></p>
+    </details>
+    <details id="cal-sub">
+      <summary>Show bookings in my calendar</summary>
+      <p>Subscribe once and every booking, added here or from a confirmation email through the chat assistant, shows up in Apple, Google or Outlook Calendar with a reminder an hour before. Calendars check for changes about every hour (Google can take up to a day), so use the calendar button on a booking to add it right away.</p>
+      <div class="row-btns" style="margin-top:10px"><button class="btn" id="cal-new" type="button">Make my calendar link</button></div>
+      <div class="field" id="cal-show" hidden style="margin-top:10px">
+        <label for="cal-url">Your calendar link (private, shown once)</label>
+        <input id="cal-url" type="text" readonly>
+        <div class="row-btns" style="margin-top:6px">
+          <a class="btn" id="cal-apple" href="#">Add to Apple Calendar</a>
+          <a class="btn" id="cal-google" href="#" target="_blank" rel="noopener">Add to Google Calendar</a>
+          <button class="btn" id="cal-copy" type="button">Copy link</button>
+        </div>
+      </div>
+      <p class="small err-text" id="cal-err" hidden></p>
+    </details>
   </section>
 
   <section class="card" aria-labelledby="h-hist">
@@ -350,6 +393,7 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice } from "./restring.js";
+import { toIcs, bookingTitle, zonedToUtc, DEFAULT_TZ } from "./courts.js";
 (() => {
   "use strict";
   // ---------- state & storage ----------
@@ -373,10 +417,11 @@ import { restringAdvice } from "./restring.js";
   const key = name => "sbm-" + name + ":" + (user ? user.id : "none");
   function localLoad() { return lsGet(key("rackets"), {}); }
   let profile = { level: null, style: null };
+  let bookings = [];      // court bookings: upcoming and the last two weeks
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -416,6 +461,8 @@ import { restringAdvice } from "./restring.js";
     else if (op.op === "play.add") { const r = rackets[op.racketId]; if (r && !(r.plays || []).some(x => x.id === op.id)) (r.plays = r.plays || []).push({ id: op.id, d: op.d, min: op.min, kind: op.kind }); }
     else if (op.op === "play.delete") Object.values(rackets).forEach(r => { r.plays = (r.plays || []).filter(x => x.id !== op.id); });
     else if (op.op === "profile.put") profile = { ...op.data };
+    else if (op.op === "booking.put") { const { op: _, ...b } = op; bookings = bookings.filter(x => x.id !== b.id).concat([{ ...b, playId: null }]).sort((a, c) => a.start - c.start); }
+    else if (op.op === "booking.cancel") bookings = bookings.filter(x => x.id !== op.id);
     else if (op.op === "racket.delete") delete rackets[op.id];
     else if (op.op === "reading.add") { const r = rackets[op.racketId]; if (r && !r.readings.some(x => x.id === op.id)) r.readings.push({ id: op.id, t: op.t, hz: op.hz, ...(op.s ? { s: op.s } : {}) }); }
     else if (op.op === "reading.delete") Object.values(rackets).forEach(r => { r.readings = r.readings.filter(x => x.id !== op.id); });
@@ -454,6 +501,7 @@ import { restringAdvice } from "./restring.js";
       if (body.user) { user = { ...user, ...body.user }; lsSet("sbm-user", user); }
       rackets = body.rackets || {};
       if (body.profile) profile = body.profile;
+      if (body.bookings) bookings = body.bookings;
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
@@ -471,7 +519,7 @@ import { restringAdvice } from "./restring.js";
   function renderAfterSync() {
     // Don't overwrite a field the person is typing in.
     const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
-    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays();
+    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings();
   }
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
@@ -648,7 +696,45 @@ import { restringAdvice } from "./restring.js";
     const ul = $("rs-factors"); ul.textContent = "";
     a.factors.forEach(f => { const li = document.createElement("li"), b = document.createElement("b"), sp = document.createElement("span"); b.textContent = f.life_used_pct + "%"; sp.textContent = f.note.replace(/^./, c => c.toUpperCase()); li.append(b, sp); ul.appendChild(li); });
   }
-  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); }
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); }
+
+  // ---------- court bookings ----------
+  const clubTz = () => DEFAULT_TZ;
+  const bkWhen = b => new Date(b.start).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  function downloadIcs(b) {
+    const blob = new Blob([toIcs([b], { name: "Tennis courts", method: "PUBLISH" })], { type: "text/calendar" });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tennis-" + new Date(b.start).toISOString().slice(0, 10) + ".ics";
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+  function renderBookings() {
+    $("courts").hidden = !user;
+    const ol = $("bookings"); ol.textContent = "";
+    const now = Date.now();
+    bookings.forEach(b => {
+      const done = b.start + b.min * 60000 <= now;
+      const li = document.createElement("li"); if (done) li.className = "past";
+      const t = document.createElement("span"); t.className = "t";
+      const w = document.createElement("b"); w.textContent = bkWhen(b);
+      const r = b.racketId && rackets[b.racketId] ? " · " + rackets[b.racketId].name : "";
+      t.append(w, document.createTextNode(" · " + bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : "")));
+      const k = document.createElement("span"); k.className = "k"; k.textContent = hrs(b.min) + " h";
+      const cal = document.createElement("button"); cal.type = "button"; cal.textContent = "📅"; cal.setAttribute("aria-label", "Add this booking to your calendar");
+      cal.onclick = () => downloadIcs(b);
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this booking");
+      del.onclick = () => {
+        if (!confirm("Remove this booking from the app and your calendar? It isn't cancelled with the club; do that in GameTime.")) return;
+        queue({ op: "booking.cancel", id: b.id }); applyLocal({ op: "booking.cancel", id: b.id }); localSave(); renderBookings();
+      };
+      li.append(t, k, cal, del); ol.appendChild(li);
+    });
+    $("courts-line").hidden = bookings.length > 0;
+    const sel = $("bk-racket"), keep = sel.value; sel.textContent = "";
+    const auto = document.createElement("option"); auto.value = ""; auto.textContent = "Most recently used"; sel.appendChild(auto);
+    Object.entries(rackets).forEach(([id, r]) => { const o = document.createElement("option"); o.value = id; o.textContent = r.name; sel.appendChild(o); });
+    sel.value = rackets[keep] ? keep : "";
+    if (!$("bk-date").value) $("bk-date").value = today();
+  }
+  function bkErr(m) { $("bk-err").textContent = m || ""; $("bk-err").hidden = !m; }
 
   // ---------- canvases ----------
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -833,6 +919,14 @@ import { restringAdvice } from "./restring.js";
   };
   function setPlayMsg(m) { $("hours-line").textContent = m; }
   $("plays-more").onclick = () => { showAllPlays = true; renderPlays(); };
+  $("bk-save").onclick = () => {
+    const d = $("bk-date").value, tm = $("bk-time").value;
+    if (!d || !/^\d{2}:\d{2}/.test(tm)) { bkErr("Pick the day and start time."); return; }
+    const tz = clubTz(), start = zonedToUtc(d, tm.slice(0, 5), tz);
+    const b = { id: uid(), start, min: +$("bk-len").value, tz, kind: $("bk-kind").value, court: $("bk-court").value.trim() || null, location: null, note: null, ref: null, racketId: $("bk-racket").value || null };
+    queue({ op: "booking.put", ...b }); applyLocal({ op: "booking.put", ...b }); localSave();
+    bkErr(""); $("bk-court").value = ""; $("bk-add").open = false; renderBookings();
+  };
   $("play-date").addEventListener("change", e => { playDatePicked = !!e.target.value && e.target.value !== today(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) renderPlays(); });
   $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); renderRestring(); };
@@ -917,6 +1011,7 @@ import { restringAdvice } from "./restring.js";
   function start() {
     outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
     profile = lsGet(key("profile"), { level: null, style: null });
+    bookings = lsGet(key("bookings"), []);
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();
@@ -1068,6 +1163,26 @@ import { restringAdvice } from "./restring.js";
   $("tok-copy").onclick = async () => {
     try { await navigator.clipboard.writeText($("tok-url").value); $("tok-copy").textContent = "Copied"; setTimeout(() => { $("tok-copy").textContent = "Copy link"; }, 2000); }
     catch { $("tok-url").select(); }
+  };
+  function calErr(msg) { $("cal-err").textContent = msg || ""; $("cal-err").hidden = !msg; }
+  $("cal-new").onclick = async () => {
+    calErr(""); $("cal-new").disabled = true;
+    try {
+      const tz = (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone;
+      const out = await tokensCall("POST", { label: "Court calendar", timezone: tz, scope: "calendar" });
+      const https = new URL("api/calendar/" + out.token.secret + ".ics", location.href).href;
+      const webcal = https.replace(/^https?:/, "webcal:");
+      $("cal-url").value = https;
+      $("cal-apple").href = webcal;
+      $("cal-google").href = "https://calendar.google.com/calendar/r?cid=" + encodeURIComponent(webcal);
+      $("cal-show").hidden = false;
+      renderTokens(out.tokens);
+    } catch (e) { calErr(navigator.onLine ? e.message : "You're offline. Connect to make a link."); }
+    finally { $("cal-new").disabled = false; }
+  };
+  $("cal-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("cal-url").value); $("cal-copy").textContent = "Copied"; setTimeout(() => { $("cal-copy").textContent = "Copy link"; }, 2000); }
+    catch { $("cal-url").select(); }
   };
   setTimeout(loadTokens, 1500);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") loadTokens(); });

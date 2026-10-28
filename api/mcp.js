@@ -13,7 +13,9 @@ import { json } from "../lib/http.js";
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "Stringbed Meter keeps a tennis player's rackets, string tension readings and play sessions. "
   + "When the person says they played (for example 'I played an hour of singles'), call log_play. "
-  + "For questions about string wear or when to restring, call restring_advice. Pass dates in the person's local time.";
+  + "For questions about string wear or when to restring, call restring_advice. "
+  + "When the person shares a court booking confirmation (for example a Seattle Tennis Club / GameTime email), call add_court_booking; "
+  + "finished bookings are logged as play automatically, so don't also call log_play for them. Pass dates in the person's local time.";
 
 function secretFrom(request) {
   const url = new URL(request.url);

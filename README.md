@@ -53,6 +53,14 @@ The link is a password for your tennis data: anyone with it can read and add to 
 
 Tools: `log_play`, `list_rackets`, `restring_advice`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the link was made.
 
+## Court bookings (Seattle Tennis Club)
+
+The Court bookings card keeps the courts you book. Add one in the app, or paste a GameTime confirmation email into Claude with the connector on (it calls `add_court_booking`, and sending the same confirmation number again updates the booking). Once a booking ends, its time is logged as play on the racket you picked, or on the one you used most recently. This happens on the next sync, chat call or calendar refresh.
+
+Under "Show bookings in my calendar", make a private calendar link and subscribe to it in Apple or Google Calendar. Each booking appears with a reminder an hour before, and cancelled ones disappear. Calendar links can only read bookings and are separate from connector links (`api_tokens.scope`). The feed is `GET /api/calendar/<secret>.ics`. The 📅 button on a booking downloads a one-off `.ics` file for when you don't want to wait for the calendar to refresh.
+
+Removing a booking here does not cancel it with the club. Do that in GameTime. Notes on how GameTime's court sheet works, for a later direct hookup, are in `docs/gametime.md`.
+
 ## Put it on your iPhone
 
 1. Open the site in **Safari** and create an account (or sign in).

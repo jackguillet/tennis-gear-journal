@@ -79,7 +79,7 @@ test("MCP handshake and tool list", async () => {
   const note = await fetch(link, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) });
   assert.equal(note.status, 202);
   const list = await mcp(link, "tools/list");
-  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["delete_session", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile"]);
+  assert.deepEqual(list.body.result.tools.map((t) => t.name).sort(), ["add_court_booking", "cancel_court_booking", "delete_session", "list_court_bookings", "list_rackets", "list_sessions", "log_play", "record_restring", "restring_advice", "set_player_profile"]);
   assert.equal((await fetch(link)).status, 405);
 });
 

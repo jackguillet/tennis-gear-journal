@@ -7,7 +7,7 @@ import { json, readJson } from "../lib/http.js";
 
 // Connector links for the signed-in player (session cookie required).
 //   GET    /api/tokens                          -> { tokens: [...] }
-//   POST   /api/tokens { label?, timezone? }    -> { token: { id, secret, label }, tokens }  (secret shown once)
+//   POST   /api/tokens { label?, timezone?, scope? }    -> { token: { id, secret, label }, tokens }  (secret shown once)
 //   DELETE /api/tokens { id }                   -> { tokens }
 async function handle(request) {
   const cookies = [];
