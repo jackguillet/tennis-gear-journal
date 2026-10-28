@@ -148,6 +148,60 @@ function browser() {
     },
   };
 }
+test("lesson time a pro holds shows up; lessons someone booked don't", () => {
+  const sheet = { e: [...SHEET.e, { n: "Court 9", i: "1", t: [], b: [
+    { t: 1080, d: 60, i: "adcf53", bkId: 2001, j: "TOM (PRO) PLUNKETT" },
+    { t: 360, d: 60, i: "adcf53", bkId: 2002, j: "SCOTT (PRO) MOORE" },
+    { t: 600, d: 60, i: "adcf53", bkId: 2003, j: "SCOTT (PRO) MOORE", p: [{ n: "PAT LEE", u: 111 }] },
+  ] }] };
+  const out = gt.parseLessons(sheet, "2026-10-29").map((l) => `${l.pro}@${l.start}/${l.court}`);
+  assert.deepEqual([...out], ["Scott Moore@360/Court 9", "Tom Plunkett@1080/Court 9"]);
+});
+
+// Shaped like GameTime's waitlist page. Made-up people.
+const WAITLIST = `<table><tbody>
+  <tr>
+  <tr id="row_1">
+    <td>PAT LEE,<br />SAM KIM</td><td>LEE, PAT</td><td>Wed, Oct 28, 2026</td><td>6:00PM - 7:15PM</td>
+    <td>Wed, Oct 21, 2026 7:23PM</td><td>14, 15, 16</td><td></td><td></td>
+  </tr>
+  <tr>
+  <tr id="row_2">
+    <td>ALEX P,<br />JACK G,<br />B,<br />C</td><td>P, ALEX</td><td>Thu, Oct 29, 2026</td><td>9:00AM - 12:00AM</td>
+    <td>Thu, Oct 22, 2026 11:49AM</td><td>14, 15</td><td></td><td></td>
+  </tr></tbody></table>`;
+
+test("the waitlist page becomes days, times, players and courts", () => {
+  const w = gt.parseWaitlist(WAITLIST);
+  assert.equal(w.length, 2);
+  assert.deepEqual({ ...w[0], players: [...w[0].players], courts: [...w[0].courts] },
+    { date: "2026-10-28", start: 1080, minutes: 75, players: ["PAT LEE", "SAM KIM"], courts: ["14", "15", "16"] });
+  assert.equal(w[1].start, 540); assert.equal(w[1].minutes, 900, "an end of 12:00AM means midnight");
+  assert.equal(w[1].players.length, 4);
+});
+
+test("dining: open days, time slots, rooms and when play ends", () => {
+  assert.deepEqual([...gt.diningDates(["Wed, 28 Oct 2026 00:00:00 GMT", "Sun, 01 Nov 2026 00:00:00 GMT"])], ["2026-10-28", "2026-11-01"]);
+  assert.equal(gt.jonasDate("2026-10-28"), "20261028T000000");
+  assert.equal(gt.jonasDate("2026-10-28", 17 * 60 + 30), "20261028T173000");
+  const slots = gt.parseDiningSlots([
+    { value: "5:00 PM", value24: "1700", valueJSFriendly: "Wed, 28 Oct 2026 17:00:00 GMT", available: "True" },
+    { value: "5:30 PM", value24: "1730", valueJSFriendly: "Wed, 28 Oct 2026 17:30:00 GMT", available: "False" },
+    { value: "6:00 PM", valueJSFriendly: "Wed, 28 Oct 2026 18:00:00 GMT", available: "True" },
+  ]);
+  assert.deepEqual(slots.map((x) => x.min), [1020, 1080]);
+  const rooms = gt.parseAvailability([
+    { facilityID: 182700, availableTimes: [{ dateTimeJS: "Wed, 28 Oct 2026 18:30:00 GMT", mealPeriodID: 1 }, { dateTimeJS: "Wed, 28 Oct 2026 18:00:00 GMT" }] },
+    { facilityID: 182699, availableTimes: [], restrictionMessage: "Closed for a private event" },
+  ], [{ id: 182700, description: "Canoe Club" }, { id: 182699, description: "Club Grill" }]);
+  assert.equal(rooms[0].facility, "Canoe Club"); assert.deepEqual([...rooms[0].times], [1080, 1110]);
+  assert.equal(rooms[1].note, "Closed for a private event");
+  // 1:00 pm for 75 minutes and 5:00 pm for an hour on the same day: off court at 6 pm.
+  const day = (h) => Date.parse("2026-10-29T" + h + ":00-07:00");
+  const play = gt.playDays([{ start: day("13:00"), minutes: 75, court: "Court 17" }, { start: day("17:00"), minutes: 60, court: "Court 3" }]);
+  assert.equal(play.length, 1); assert.equal(play[0].date, "2026-10-29"); assert.equal(play[0].end, 18 * 60); assert.equal(play[0].court, "Court 3");
+});
+
 const send = (body, origin = "https://stc.gametime.net") =>
   fetch(app.origin + "/api/gametime", { method: "POST", headers: { "content-type": "text/plain", origin }, body: JSON.stringify(body) });
 const dayIn = (n) => new Date(Date.now() + n * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
@@ -221,4 +275,14 @@ test("an edited booking (new GameTime booking id, same confirmation) updates the
   const state = (await jack.call("POST", "/api/sync", { ops: [] })).data;
   const hits = state.bookings.filter((x) => x.ref === "600001");
   assert.equal(hits.length, 1); assert.equal(hits[0].court, "Court 2");
+});
+
+test("the dining view on the club site can read the member's coming court times", async () => {
+  const res = await send({ key, list: true }, "https://www.seattletennisclub.org");
+  assert.equal(res.status, 200);
+  assert.equal(res.headers.get("access-control-allow-origin"), "https://www.seattletennisclub.org");
+  const { bookings } = await res.json();
+  assert.ok(bookings.length >= 1);
+  assert.ok(bookings.every((b) => typeof b.start === "number" && b.minutes >= 15 && b.start > Date.now() - 7 * 3600000));
+  assert.equal((await send({ key: mcpKey, list: true }, "https://www.seattletennisclub.org")).status, 401);
 });

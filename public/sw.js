@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever a file changes so phones pick up the update.
-const VERSION = "stringbed-v9";
+const VERSION = "stringbed-v10";
 const FILES = ["./", "index.html", "tension.js", "restring.js", "courts.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
