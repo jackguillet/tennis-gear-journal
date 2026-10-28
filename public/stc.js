@@ -6,10 +6,13 @@
 //   2. sends the member's own bookings (from GameTime's "upcoming" list, or the court sheets if
 //      that isn't available; never anyone else's) to Stringbed Meter, so they reach the
 //      app, the court calendar and the play log.
-//   3. lists clinics and events with open spots (sign-up stays on GameTime's event page), and
-//      members on GameTime's Available Partners list, filtered by level. The partner list is
-//      only shown on the page; it is never sent to Stringbed Meter or stored.
-// It never books, changes or cancels anything in GameTime. It is a classic script (not a module)
+//   3. lists clinics and events with open spots (sign-up stays on GameTime's event page), lesson
+//      time the pros hold on the court sheet, the court waitlist, and members on GameTime's
+//      Available Partners list, filtered by level. The partner list and the waitlist are only
+//      shown on the page; they are never sent to Stringbed Meter or stored.
+// On the club site (seattletennisclub.org) the same button shows dinner times after the member's
+// court bookings, read from the club's own dining page with the member's session.
+// It never books, changes or cancels anything in GameTime or on the club site. It is a classic script (not a module)
 // so it loads from another site without CORS. Tests load it in a sandbox and use SBM_GT.
 (function () {
   "use strict";
@@ -153,17 +156,98 @@
     return out;
   }
 
-  globalThis.SBM_GT = { openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, upcomingUrl, eventsUrl, partnersUrl, bookUrl, sheetUrl, clock, hhmm };
+  // Lesson time a pro holds on the court sheet: GameTime's "Lesson" / "Lesson Available" blocks
+  // carry the pro's name (b.j) and nobody has booked into them yet.
+  const proName = (j) => decode(j).replace(/\(\s*pro\s*\)/i, " ").replace(/\s+/g, " ").trim().toLowerCase().replace(/(^|[\s'-])([a-z])/g, (_, a, c) => a + c.toUpperCase());
+  function parseLessons(sheet, date) {
+    const out = [];
+    for (const c of (sheet && sheet.e) || []) {
+      for (const b of c.b || []) {
+        if (!b.j || (b.p && b.p.length) || b.f || b.e) continue;
+        out.push({ pro: proName(b.j), date, start: Number(b.t), minutes: Number(b.d), court: c.n, courtId: String(c.i) });
+      }
+    }
+    return out.sort((a, b) => a.start - b.start || a.pro.localeCompare(b.pro));
+  }
+
+  // GameTime's court waitlist page: one row per group waiting for a court to free up.
+  const waitlistUrl = `/scheduling/waitlist/index/sport/${SPORT}`;
+  const waitlistJoinUrl = `/scheduling/waitlist/new/sport/${SPORT}`;
+  function parseWaitlist(html) {
+    const out = [];
+    for (const chunk of String(html || "").split(/<tr id="row_\d+">/).slice(1)) {
+      const tds = [...chunk.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((m) => m[1]);
+      if (tds.length < 6) continue;
+      const d = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2}),?\s*(\d{4})/i.exec(decode(tds[2]));
+      const t = /(\d{1,2}):(\d{2})\s*(am|pm)\s*-\s*(\d{1,2}):(\d{2})\s*(am|pm)/i.exec(decode(tds[3]));
+      if (!d || !t) continue;
+      const start = to24(t[1], t[2], t[3]);
+      let end = to24(t[4], t[5], t[6]); if (end <= start) end += 1440;
+      out.push({
+        date: `${d[3]}-${pad(MONTHS.indexOf(d[1].slice(0, 3).toLowerCase()) + 1)}-${pad(d[2])}`, start, minutes: Math.min(end, 1440) - start,
+        players: tds[0].split(/<br\s*\/?>/i).map((x) => decode(x).replace(/,$/, "").trim()).filter(Boolean),
+        courts: decode(tds[5]).split(/\s*,\s*/).filter(Boolean),
+      });
+    }
+    return out.sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start);
+  }
+
+  // ---------- the club site's dining reservations (Jonas Clubhouse Online) ----------
+  const DINING_API = "/api/v1/dining/";
+  const DINING_PAGE = "/CMSModules/CHO/DiningReservations/Dining.aspx";
+  // The club writes its own wall-clock times as if they were GMT, e.g. "Wed, 28 Oct 2026 17:00:00 GMT".
+  const jonasDate = (date, min = 0) => date.replace(/-/g, "") + "T" + pad(Math.floor(min / 60)) + pad(min % 60) + "00";
+  function wallDate(v) {
+    const m = /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})/i.exec(String(v || ""));
+    return m ? `${m[3]}-${pad(MONTHS.indexOf(m[2].toLowerCase()) + 1)}-${pad(m[1])}` : null;
+  }
+  function wallMin(v) {
+    const s = String(v == null ? "" : v), m = /\b(\d{1,2}):(\d{2})(?::\d{2})?\s*(?:GMT|Z|$)/i.exec(s) || /T(\d{2}):?(\d{2})/.exec(s);
+    return m ? +m[1] * 60 + +m[2] : null;
+  }
+  const diningDates = (list) => (Array.isArray(list) ? list : []).map(wallDate).filter(Boolean);
+  function parseDiningSlots(list) {
+    return (Array.isArray(list) ? list : []).filter((s) => s && String(s.available) !== "False").map((s) => {
+      const v = /^(\d{1,2})(\d{2})$/.exec(String(s.value24 || ""));
+      return { min: v ? +v[1] * 60 + +v[2] : wallMin(s.valueJSFriendly), label: s.value || null };
+    }).filter((s) => s.min != null).sort((a, b) => a.min - b.min);
+  }
+  // GetAvailability answers per facility (Canoe Club, Club Grill) with the times it can seat the party.
+  function parseAvailability(list, facilities) {
+    const names = new Map((facilities || []).map((f) => [String(f.id), f.description]));
+    return (Array.isArray(list) ? list : []).map((f) => ({
+      facility: names.get(String(f.facilityID)) || "Dining room",
+      times: [...new Set((f.availableTimes || []).map((t) => wallMin(t.dateTimeJS || t.dateTime || t.time)).filter((x) => x != null))].sort((a, b) => a - b),
+      note: f.restrictionMessage ? decode(f.restrictionMessage) : null,
+    }));
+  }
+  // When the member is done on court each day (club time), from the bookings Stringbed Meter has.
+  function playDays(bookings, tz = "America/Los_Angeles") {
+    const days = new Map();
+    for (const b of bookings || []) {
+      const end = new Date(Number(b.start) + Number(b.minutes) * 60000);
+      const date = end.toLocaleDateString("en-CA", { timeZone: tz });
+      const [h, m] = end.toLocaleTimeString("en-GB", { timeZone: tz, hour12: false }).split(":");
+      const min = +h * 60 + +m, prev = days.get(date);
+      if (!prev || min > prev.end) days.set(date, { date, end: min, court: b.court || null });
+    }
+    return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
+  }
+
+  globalThis.SBM_GT = {
+    openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
+    jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
+    upcomingUrl, eventsUrl, partnersUrl, waitlistUrl, bookUrl, sheetUrl, clock, hhmm,
+  };
 
   // ---------- the panel (only on GameTime, launched from the bookmark) ----------
   const cfg = typeof window !== "undefined" ? window.__sbmGT : null;
   if (!cfg) return;
-  if (!/(^|\.)gametime\.net$/.test(location.hostname)) {
-    alert("Open stc.gametime.net and sign in, then tap the Stringbed Meter button again.");
+  const onClubSite = /(^|\.)seattletennisclub\.org$/.test(location.hostname);
+  if (!onClubSite && !/(^|\.)gametime\.net$/.test(location.hostname)) {
+    alert("Open stc.gametime.net (courts) or seattletennisclub.org (dining) and sign in, then tap the Stringbed Meter button again.");
     return;
   }
-  const html = document.documentElement.innerHTML;
-  const userId = (/setUserId\((\d+)\)/.exec(html) || [])[1] || null;
   if (document.getElementById("sbm-gt-host")) { document.getElementById("sbm-gt-host").remove(); }
 
   const clubToday = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
@@ -183,10 +267,7 @@
     return cache.get(k);
   }
 
-  const host = document.createElement("div"); host.id = "sbm-gt-host";
-  host.style.cssText = "position:fixed;inset:0;z-index:2147483647";
-  const root = host.attachShadow({ mode: "open" });
-  root.innerHTML = `<style>
+  const STYLE = `<style>
     :host { all: initial; }
     .wrap { position: fixed; inset: 0; background: rgba(10,20,30,.45); display: flex; justify-content: center; font: 16px/1.4 -apple-system, system-ui, sans-serif; }
     .panel { background: #fff; color: #142233; width: 100%; max-width: 480px; height: 100%; overflow: auto; -webkit-overflow-scrolling: touch; padding: 14px 16px 40px; box-sizing: border-box; }
@@ -203,8 +284,8 @@
     .slot { border: 1px solid #d5dce4; border-radius: 8px; padding: 6px 10px; text-decoration: none; color: #1d4f7c; font-weight: 600; font-size: 15px; }
     .muted { color: #5b6b7c; font-size: 14px; } .err { color: #b42318; font-size: 14px; }
     ul { list-style: none; margin: 0; padding: 0; } li { padding: 6px 0; border-top: 1px solid rgba(128,128,128,.25); font-size: 15px; }
-    .tabs { display: flex; gap: 4px; margin: 4px 0 12px; border-bottom: 1px solid rgba(128,128,128,.3); }
-    .tab { border: 0; background: none; color: inherit; font: 600 15px system-ui, sans-serif; padding: 8px 12px; cursor: pointer; border-bottom: 3px solid transparent; }
+    .tabs { display: flex; gap: 4px; overflow-x: auto; margin: 4px 0 12px; border-bottom: 1px solid rgba(128,128,128,.3); }
+    .tab { flex: none; border: 0; background: none; color: inherit; font: 600 15px system-ui, sans-serif; padding: 8px 12px; cursor: pointer; border-bottom: 3px solid transparent; }
     .tab[aria-selected="true"] { border-bottom-color: #1d4f7c; color: #1d4f7c; }
     .item { padding: 10px 0; border-top: 1px solid rgba(128,128,128,.25); }
     .item a.title { color: #1d4f7c; font-weight: 600; text-decoration: none; } .item .meta { font-size: 14px; color: #5b6b7c; margin-top: 2px; }
@@ -212,12 +293,43 @@
     .tag.full { background: #f3e8e7; color: #b42318; }
     .contact a { color: #1d4f7c; margin-right: 12px; font-size: 14px; }
     input[type=search] { width: 100%; box-sizing: border-box; font: 16px system-ui, sans-serif; padding: 8px 10px; border: 1px solid #d5dce4; border-radius: 8px; margin: 8px 0; background: transparent; color: inherit; }
-  </style>
+  </style>`;
+  // A full-screen panel in a shadow root, so GameTime's and the club site's styles don't leak in.
+  function mount(inner) {
+    const host = document.createElement("div"); host.id = "sbm-gt-host";
+    host.style.cssText = "position:fixed;inset:0;z-index:2147483647";
+    const root = host.attachShadow({ mode: "open" });
+    root.innerHTML = STYLE + inner;
+    document.body.appendChild(host);
+    root.getElementById("close").onclick = () => host.remove();
+    root.querySelector(".wrap").addEventListener("click", (e) => { if (e.target.classList.contains("wrap")) host.remove(); });
+    return root;
+  }
+  function chips(box, items, isOn, onTap) {
+    box.textContent = "";
+    for (const [value, label] of items) {
+      const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = label;
+      b.setAttribute("aria-pressed", String(isOn(value))); b.onclick = () => onTap(value); box.appendChild(b);
+    }
+  }
+  const getJSON = async (url) => { const r = await fetch(url, { credentials: "same-origin", headers: { accept: "application/json" } }); if (!r.ok) throw new Error("said " + r.status); return r.json(); };
+  const pref = (k, d) => { try { return localStorage.getItem("sbm-gt-" + k) ?? d; } catch { return d; } };
+  const setPref = (k, v) => { try { localStorage.setItem("sbm-gt-" + k, v); } catch {} };
+  const today = clubToday();
+  const dayLabel = (d) => { const i = Math.round((Date.parse(d) - Date.parse(today)) / 86400000); return dayName(d, i >= 0 && i < 2 ? i : 9); };
+
+  if (onClubSite) { dining(); return; }
+
+  const html = document.documentElement.innerHTML;
+  const userId = (/setUserId\((\d+)\)/.exec(html) || [])[1] || null;
+  const root = mount(`
   <div class="wrap"><div class="panel" role="dialog" aria-label="Stringbed Meter for GameTime">
     <header><h1>Seattle Tennis Club</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="courts" aria-selected="true">Courts</button>
+      <button class="tab" role="tab" data-tab="lessons" aria-selected="false">Lessons</button>
       <button class="tab" role="tab" data-tab="events" aria-selected="false">Clinics & events</button>
+      <button class="tab" role="tab" data-tab="waitlist" aria-selected="false">Waitlist</button>
       <button class="tab" role="tab" data-tab="partners" aria-selected="false">Partners</button>
     </div>
     <section id="tab-courts">
@@ -227,6 +339,16 @@
       <div id="slots"><p class="muted">Loading\u2026</p></div>
       <h2>Your bookings</h2>
       <div id="mine"><p class="muted">Loading your bookings\u2026</p></div>
+      <p class="muted">Dinner after tennis: tap this button on seattletennisclub.org while signed in.</p>
+    </section>
+    <section id="tab-lessons" hidden>
+      <p class="muted">Lesson time the pros are holding on the court sheet this week. Book it with the pro or the Pro Shop, <a href="tel:+12063245454">(206) 324-5454</a>.</p>
+      <div class="row" id="ls-pro"></div>
+      <div id="lessons"><p class="muted">Loading\u2026</p></div>
+    </section>
+    <section id="tab-waitlist" hidden>
+      <p class="muted">Groups waiting for a court to free up. When a court is cancelled, GameTime offers it to the first group whose players all pass the booking rules. <a href="${waitlistJoinUrl}">Join the waitlist</a></p>
+      <div id="waitlist"><p class="muted">Loading\u2026</p></div>
     </section>
     <section id="tab-events" hidden>
       <p class="muted">Adult clinics, round robins and club nights for the next four weeks. Tap one to see it and sign up on GameTime.</p>
@@ -240,23 +362,12 @@
       <input type="search" id="pt-q" placeholder="Search names and notes (e.g. mornings, clay)">
       <div id="partners"><p class="muted">Loading\u2026</p></div>
     </section>
-  </div></div>`;
-  document.body.appendChild(host);
+  </div></div>`);
   const $ = (id) => root.getElementById(id);
-  $("close").onclick = () => host.remove();
-  root.querySelector(".wrap").addEventListener("click", (e) => { if (e.target.classList.contains("wrap")) host.remove(); });
 
-  const today = clubToday();
   const days = Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i));
   let day = days[0], groups = new Set(GROUPS.map(([g]) => g));
 
-  function chips(box, items, isOn, onTap) {
-    box.textContent = "";
-    for (const [value, label] of items) {
-      const b = document.createElement("button"); b.className = "chip"; b.type = "button"; b.textContent = label;
-      b.setAttribute("aria-pressed", String(isOn(value))); b.onclick = () => onTap(value); box.appendChild(b);
-    }
-  }
   function renderChips() {
     chips($("days"), days.map((d, i) => [d, dayName(d, i)]), (d) => d === day, (d) => { day = d; renderChips(); renderSlots(); });
     chips($("groups"), GROUPS, (g) => groups.has(g), (g) => { if (groups.has(g) && groups.size > 1) groups.delete(g); else groups.add(g); renderChips(); renderSlots(); });
@@ -296,6 +407,16 @@
 
   // Look through the coming days for the member's own bookings, one request at a time, and
   // send them to Stringbed Meter.
+  // The member's full name as GameTime writes it on bookings ("JACKSON GUILLET"), to spot them on the waitlist.
+  let myName = null;
+  function fullName(feed, me) {
+    if (!me) return null;
+    for (const r of (feed && feed.Response && feed.Response.Results) || []) {
+      const n = String(r.players || "").split(",").map((x) => x.replace(/\s+/g, " ").trim()).find((x) => x.toUpperCase().startsWith(me.toUpperCase() + " "));
+      if (n) return n.toUpperCase();
+    }
+    return null;
+  }
   async function scanMine() {
     const box = $("mine");
     if (!userId) { box.innerHTML = '<p class="muted">Sign in to GameTime to see your bookings.</p>'; return; }
@@ -305,7 +426,9 @@
       const r = await fetch(upcomingUrl, { credentials: "same-origin", headers: { accept: "application/json" } });
       if (!r.ok) throw new Error("upcoming " + r.status);
       const me = ((/Welcome,\s*([A-Za-z'-]+)/.exec(document.body.innerText || "") || [])[1]) || null;
-      const up = parseUpcoming(await r.json(), me);
+      const feed = await r.json();
+      const up = parseUpcoming(feed, me);
+      myName = fullName(feed, me);
       found = up.bookings;
       const last = found.length ? found[found.length - 1].date : null;
       // Cancel-sync only covers days the list fully covers.
@@ -341,12 +464,10 @@
   const loaded = {};
   root.querySelectorAll(".tab").forEach((t) => t.onclick = () => {
     root.querySelectorAll(".tab").forEach((x) => x.setAttribute("aria-selected", String(x === t)));
-    for (const name of ["courts", "events", "partners"]) $("tab-" + name).hidden = name !== t.dataset.tab;
-    if (!loaded[t.dataset.tab]) { loaded[t.dataset.tab] = true; if (t.dataset.tab === "events") loadEvents(); if (t.dataset.tab === "partners") loadPartners(); }
+    for (const name of ["courts", "lessons", "events", "waitlist", "partners"]) $("tab-" + name).hidden = name !== t.dataset.tab;
+    const load = { lessons: loadLessons, events: loadEvents, waitlist: loadWaitlist, partners: loadPartners }[t.dataset.tab];
+    if (load && !loaded[t.dataset.tab]) { loaded[t.dataset.tab] = true; load(); }
   });
-  const getJSON = async (url) => { const r = await fetch(url, { credentials: "same-origin", headers: { accept: "application/json" } }); if (!r.ok) throw new Error("GameTime said " + r.status); return r.json(); };
-  const pref = (k, d) => { try { return localStorage.getItem("sbm-gt-" + k) ?? d; } catch { return d; } };
-  const setPref = (k, v) => { try { localStorage.setItem("sbm-gt-" + k, v); } catch {} };
 
   // ---------- clinics & events ----------
   let events = [], evOpenOnly = pref("ev-open", "1") === "1";
@@ -367,7 +488,7 @@
       const tag = document.createElement("span"); tag.className = "tag" + (e.full ? " full" : "");
       tag.textContent = e.full ? "Full" : e.spotsLeft != null ? e.spotsLeft + (e.spotsLeft === 1 ? " spot" : " spots") : "Open";
       const meta = document.createElement("div"); meta.className = "meta";
-      meta.textContent = [clock(e.start) + (e.minutes ? "–" + clock(e.start + e.minutes) : ""), e.pros, e.place].filter(Boolean).join(" · ");
+      meta.textContent = [clock(e.start) + (e.minutes ? "\u2013" + clock(e.start + e.minutes) : ""), e.pros, e.place].filter(Boolean).join(" \u00b7 ");
       div.append(a, tag, meta); box.appendChild(div);
     }
   }
@@ -395,7 +516,7 @@
     for (const p of list) {
       const div = document.createElement("div"); div.className = "item";
       const b = document.createElement("b"); b.textContent = p.name.replace(/\b([A-Z])([A-Z']+)/g, (_, a, r) => a + r.toLowerCase());
-      if (p.level) { const t = document.createElement("span"); t.className = "tag"; t.textContent = p.level[0] === p.level[1] ? p.level[0].toFixed(1) : p.level[0].toFixed(1) + "–" + p.level[1].toFixed(1); b.appendChild(t); }
+      if (p.level) { const t = document.createElement("span"); t.className = "tag"; t.textContent = p.level[0] === p.level[1] ? p.level[0].toFixed(1) : p.level[0].toFixed(1) + "\u2013" + p.level[1].toFixed(1); b.appendChild(t); }
       div.appendChild(b);
       if (p.notes) { const m = document.createElement("div"); m.className = "meta"; m.textContent = p.notes; div.appendChild(m); }
       const c = document.createElement("div"); c.className = "contact";
@@ -407,5 +528,152 @@
   }
   $("pt-q").addEventListener("input", () => renderPartners());
 
-  renderChips(); renderSlots(); scanMine();
+  // ---------- lessons ----------
+  let lessons = [], lsPro = pref("ls-pro", "any");
+  async function loadLessons() {
+    const box = $("lessons");
+    try {
+      // One sheet at a time (the Courts tab may already have most of them).
+      lessons = [];
+      for (const d of days) for (const [g] of GROUPS) {
+        for (const l of parseLessons(await sheet(d, g), d)) if (!lessons.some((x) => x.courtId === l.courtId && x.date === l.date && x.start === l.start)) lessons.push(l);
+      }
+      const now = clubNowMin();
+      lessons = lessons.filter((l) => l.date > today || l.start + l.minutes > now).sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start);
+      renderLessons();
+    } catch { box.innerHTML = '<p class="err">Couldn\'t read the court sheet from GameTime.</p>'; }
+  }
+  function renderLessons() {
+    const pros = [...new Set(lessons.map((l) => l.pro))].sort();
+    if (lsPro !== "any" && !pros.includes(lsPro)) lsPro = "any";
+    chips($("ls-pro"), [["any", "All pros"], ...pros.map((p) => [p, p])], (v) => v === lsPro, (v) => { lsPro = v; setPref("ls-pro", v); renderLessons(); });
+    const box = $("lessons"); box.textContent = "";
+    const list = lessons.filter((l) => lsPro === "any" || l.pro === lsPro);
+    if (!list.length) { box.innerHTML = '<p class="muted">No open lesson time on the sheet this week.</p>'; return; }
+    // One row per pro and time, even when the block covers several courts (often a group lesson).
+    const rows = new Map();
+    for (const l of list) { const k = [l.date, l.start, l.minutes, l.pro].join("|"); if (rows.has(k)) rows.get(k).courts.push(l.court); else rows.set(k, { ...l, courts: [l.court] }); }
+    let lastDay = "";
+    for (const l of rows.values()) {
+      if (l.date !== lastDay) { const h = document.createElement("h2"); h.textContent = dayLabel(l.date); box.appendChild(h); lastDay = l.date; }
+      const div = document.createElement("div"); div.className = "item";
+      const b = document.createElement("b"); b.textContent = clock(l.start) + "\u2013" + clock(l.start + l.minutes);
+      const meta = document.createElement("div"); meta.className = "meta";
+      meta.textContent = l.pro + " \u00b7 " + (l.courts.length > 1 ? "courts " + l.courts.map((c) => c.replace(/^Court\s*/i, "")).join(", ") : l.courts[0]);
+      div.append(b, meta); box.appendChild(div);
+    }
+  }
+
+  // ---------- waitlist ----------
+  async function loadWaitlist() {
+    const box = $("waitlist");
+    let rows;
+    await mineDone.catch(() => {});
+    try {
+      const r = await fetch(waitlistUrl, { credentials: "same-origin" });
+      if (!r.ok) throw new Error(String(r.status));
+      rows = parseWaitlist(await r.text()).filter((w) => w.date >= today);
+    } catch { box.innerHTML = '<p class="err">Couldn\'t load the waitlist from GameTime.</p>'; return; }
+    box.textContent = "";
+    if (!rows.length) { box.innerHTML = '<p class="muted">Nobody is on the waitlist. If a time you want is taken, you\'d be first.</p>'; return; }
+    const n = document.createElement("p"); n.className = "muted"; n.textContent = rows.length + (rows.length === 1 ? " group" : " groups") + " waiting."; box.appendChild(n);
+    let lastDay = "";
+    for (const w of rows) {
+      if (w.date !== lastDay) { const h = document.createElement("h2"); h.textContent = dayLabel(w.date); box.appendChild(h); lastDay = w.date; }
+      const div = document.createElement("div"); div.className = "item";
+      const b = document.createElement("b"); b.textContent = clock(w.start) + "\u2013" + clock((w.start + w.minutes) % 1440);
+      const mine = myName && w.players.some((p) => p.toUpperCase().replace(/\s+/g, " ") === myName);
+      if (mine) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "You"; b.appendChild(t); }
+      const meta = document.createElement("div"); meta.className = "meta";
+      meta.textContent = (w.players.length >= 3 ? "Doubles" : w.players.length === 2 ? "Singles" : w.players.length + " player") + " \u00b7 courts " + w.courts.join(", ");
+      div.append(b, meta); box.appendChild(div);
+    }
+  }
+
+  renderChips(); renderSlots();
+  const mineDone = scanMine();
+
+  // ---------- dinner after tennis (on seattletennisclub.org) ----------
+  // Reads the club's dining availability with the member's own session and shows times after
+  // each day they play. Reserving stays on the club's dining page.
+  function dining() {
+    const root = mount(`<div class="wrap"><div class="panel" role="dialog" aria-label="Stringbed Meter: dinner after tennis">
+      <header><h1>Dinner after tennis</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
+      <p class="muted">Canoe Club and Club Grill times after your court bookings. Reserve on the club's <a href="${DINING_PAGE}">dining page</a>.</p>
+      <div class="row" id="party"></div>
+      <div id="dine"><p class="muted">Loading\u2026</p></div>
+    </div></div>`);
+    const $ = (id) => root.getElementById(id);
+    let party = +pref("party", "2") || 2, seq = 0, base = null;
+    const SIZES = [1, 2, 3, 4, 5, 6].map((n) => [n, n === 1 ? "1 person" : n + " people"]);
+
+    async function loadBase() {
+      const [dates, facilities, mine] = await Promise.all([
+        getJSON(DINING_API + "GetAvailableDates").then(diningDates),
+        getJSON(DINING_API + "GetFacilities").catch(() => []),
+        fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, list: true }) })
+          .then((r) => r.json().then((j) => { if (!r.ok) throw new Error(j.error || "HTTP " + r.status); return j.bookings || []; })),
+      ]);
+      return { dates, facilities, days: playDays(mine).filter((d) => d.date >= today) };
+    }
+
+    async function render() {
+      const n = ++seq, box = $("dine");
+      chips($("party"), SIZES, (v) => v === party, (v) => { party = v; setPref("party", String(v)); render(); });
+      box.innerHTML = '<p class="muted">Loading\u2026</p>';
+      try { base = base || await loadBase(); }
+      catch (e) {
+        box.innerHTML = "";
+        const p = document.createElement("p"); p.className = "err";
+        p.textContent = /said 401/.test(e.message) ? "Sign in to the club site first, then tap the button again." : "Couldn't load dining times: " + e.message;
+        box.appendChild(p); return;
+      }
+      if (n !== seq) return;
+      const open = new Set(base.dates);
+      // Days with a court booking, or tonight when there are none.
+      let plan = base.days.filter((d) => open.has(d.date)).slice(0, 5);
+      const none = !plan.length;
+      if (none) plan = open.has(today) ? [{ date: today, end: clubNowMin(), court: null }] : base.dates.slice(0, 1).map((d) => ({ date: d, end: 0, court: null }));
+      box.textContent = "";
+      if (none) { const p = document.createElement("p"); p.className = "muted"; p.textContent = base.days.length ? "The dining room isn't taking reservations on the days you play. Here's the next open day:" : "No court bookings in the next two weeks. Here's the next open day:"; box.appendChild(p); }
+      for (const d of plan) {
+        const h = document.createElement("h2"); h.textContent = dayLabel(d.date); box.appendChild(h);
+        if (!none) { const m = document.createElement("div"); m.className = "meta"; m.textContent = "Off court at " + clock(d.end) + (d.court ? " (" + d.court + ")" : ""); box.appendChild(m); }
+        const line = document.createElement("div"); line.className = "courts"; line.style.marginTop = "6px";
+        line.innerHTML = '<span class="muted">Checking\u2026</span>'; box.appendChild(line);
+        dayTimes(d, line, n);
+      }
+    }
+
+    // Times on one day from half an hour after play: per room when the club says, else the day's slots.
+    async function dayTimes(d, line, n) {
+      const after = d.end + 30;
+      try {
+        const slots = parseDiningSlots(await getJSON(DINING_API + "GetTimeSlots/" + jonasDate(d.date)));
+        const first = slots.find((x) => x.min >= after);
+        if (n !== seq) return;
+        if (!first) { line.innerHTML = '<span class="muted">No dinner times after you play that day.</span>'; return; }
+        let rooms = [];
+        if (base.facilities.length) {
+          try {
+            rooms = parseAvailability(await getJSON(DINING_API + "GetAvailability/" + jonasDate(d.date, first.min) + "/" + party + "/" + base.facilities.map((f) => f.id).join(";")), base.facilities)
+              .map((r) => ({ ...r, times: r.times.filter((t) => t >= after) }));
+          } catch { rooms = []; }
+        }
+        if (n !== seq) return;
+        line.textContent = "";
+        const add = (label, times) => {
+          const row = document.createElement("div"); row.className = "time";
+          const b = document.createElement("b"); b.textContent = label; b.style.fontSize = "14px";
+          const c = document.createElement("div"); c.className = "courts";
+          for (const t of times.slice(0, 8)) { const a = document.createElement("a"); a.className = "slot"; a.href = DINING_PAGE; a.textContent = clock(t); c.appendChild(a); }
+          if (!times.length) c.innerHTML = '<span class="muted">Full after you play</span>';
+          row.append(b, c); line.appendChild(row);
+        };
+        if (rooms.length) for (const r of rooms) add(r.facility, r.times);
+        else add("Dining", slots.filter((x) => x.min >= after).map((x) => x.min));
+      } catch { if (n === seq) line.innerHTML = '<span class="err">Couldn\'t read times for this day.</span>'; }
+    }
+    render();
+  }
 })();

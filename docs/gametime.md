@@ -50,4 +50,8 @@ The GameTime button now uses `/cne/index/listdata` for its Clinics & events tab 
 
 ## STC member portal (Jonas Clubhouse Online)
 
+Dining reservations (all GET, member session cookie): `/api/v1/dining/GetAvailableDates` (list of "Wed, 28 Oct 2026 00:00:00 GMT"), `GetFacilities` (Canoe Club 182700, Club Grill 182699), `GetPartySizes` (1 to 6), `GetTimeSlots/<yyyymmdd>T000000` (`value24` "1700", `available`), and `GetAvailability/<yyyymmdd>T<hhmm>00/<party>/<facility;facility>` (per facility `availableTimes[].dateTimeJS`). Times are the club's wall clock written as GMT. The GameTime button uses these on the club site for its "Dinner after tennis" view. GetAvailability's reply shape comes from the dining page's script, not a recording. Reserving stays on `/CMSModules/CHO/DiningReservations/Dining.aspx`.
+
+Court sheet lesson blocks: GameTime's "Lesson" and "Lesson Available" reservation types share colour `adcf53`; a block with a pro's name in `j` and no players is lesson time the pro is holding. Pro Shop: (206) 324-5454.
+
 The portal at www.seattletennisclub.org has a JSON API under `/api/v1/` (dining reservations, events, roster, my bookings). Club tennis rules that the app uses: cancel at least 6 hours before a court time (a no-show can mean a one-week suspension), check in at the Pro Shop before playing, book the ball machine on the day only, wear mostly-white clothing (tennis shoes can be any colour). Address: 922 McGilvra Blvd E, Seattle, WA 98112.
