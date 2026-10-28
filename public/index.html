@@ -150,6 +150,13 @@ ol.plays .t { color: var(--muted); font-size: 14px; }
 ol.plays .k { font: 500 15px var(--f-mono); }
 ol.plays button { border: 0; background: none; color: var(--muted); font-size: 18px; cursor: pointer; padding: 0; }
 .split { font-size: 14px; color: var(--muted); }
+.restring-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.wear { height: 10px; border-radius: 999px; background: var(--court-soft); overflow: hidden; }
+.wear > div { height: 100%; width: 0; border-radius: 999px; background: var(--good); }
+.wear.soon > div { background: var(--warn); } .wear.now > div { background: var(--bad); }
+ul.factors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
+ul.factors li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; }
+ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: right; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -196,6 +203,17 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
       <button class="btn wide" id="save" type="button" disabled>Save this reading</button>
     </div>
   </div>
+
+  <section class="card" aria-labelledby="h-restring" id="restring">
+    <div class="restring-head"><h2 id="h-restring">Restring</h2><span class="chip" id="rs-chip"></span></div>
+    <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+    <div id="rs-line"></div>
+    <details>
+      <summary class="small">What this is based on</summary>
+      <ul class="factors" id="rs-factors"></ul>
+      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate.</p>
+    </details>
+  </section>
 
   <section class="card" aria-labelledby="h-play">
     <h2 id="h-play">Play on these strings</h2>
@@ -332,6 +350,7 @@ ol.plays button { border: 0; background: none; color: var(--muted); font-size: 1
 
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
+import { restringAdvice } from "./restring.js";
 (() => {
   "use strict";
   // ---------- state & storage ----------
@@ -513,6 +532,7 @@ import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecord
     $("cal-text").textContent = r.calib && r.calib !== 1
       ? "Calibrated" + (r.calibAt ? " on " + new Date(r.calibAt).toLocaleDateString() : "") + ". Recalibrate after each restring."
       : "Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.";
+    renderRestring();
   }
   function renderReadout() {
     const r = R();
@@ -553,6 +573,7 @@ import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecord
       li.append(t, k, h, del); list.appendChild(li);
     });
     drawTrend();
+    renderRestring();
   }
   // first reading since the last calibration (or ever) is the reference for loss %
   function baseline(r) {
@@ -602,10 +623,25 @@ import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecord
     $("plays-more").hidden = showAllPlays || all.length <= 5;
     if (!$("play-date").value) $("play-date").value = today();
     $("play-date").max = today();
+    renderRestring();
   }
   let showAllPlays = false;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
 
+  function renderRestring() {
+    const r = R(); $("restring").hidden = !r; if (!r) return;
+    const a = restringAdvice(r, profile, today());
+    const chip = $("rs-chip"); chip.textContent = a.label;
+    chip.className = "chip " + ({ good: "good", soon: "warn", now: "bad" }[a.status] || "");
+    const bar = $("rs-bar"); bar.className = "wear " + a.status; bar.hidden = a.status === "unknown";
+    bar.firstChild.style.width = Math.min(100, a.life_used_pct) + "%"; bar.setAttribute("aria-valuenow", Math.min(100, a.life_used_pct));
+    const due = a.restring_by && a.status !== "now" ? new Date(a.restring_by + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
+    $("rs-line").textContent = a.status === "unknown" ? "Set the Strung on date below and log your play to see when these strings need replacing."
+      : a.status === "now" ? "Time for new strings: " + a.factors[0].note + "."
+      : (100 - a.life_used_pct) + "% of string life left" + (a.reason === "dead" || a.reason === "break" ? ", about " + a.hours_left + " h of play" : "") + (due ? ". Restring by about " + due : "") + ".";
+    const ul = $("rs-factors"); ul.textContent = "";
+    a.factors.forEach(f => { const li = document.createElement("li"), b = document.createElement("b"), sp = document.createElement("span"); b.textContent = f.life_used_pct + "%"; sp.textContent = f.note.replace(/^./, c => c.toUpperCase()); li.append(b, sp); ul.appendChild(li); });
+  }
   function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); }
 
   // ---------- canvases ----------
@@ -785,8 +821,8 @@ import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecord
   };
   function setPlayMsg(m) { $("hours-line").textContent = m; }
   $("plays-more").onclick = () => { showAllPlays = true; renderPlays(); };
-  $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); };
-  $("p-style").onchange = e => { profile.style = e.target.value || null; saveProfile(); };
+  $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); renderRestring(); };
+  $("p-style").onchange = e => { profile.style = e.target.value || null; saveProfile(); renderRestring(); };
   const bind = (id, key, num) => $(id).addEventListener("change", e => {
     const r = R(); let v = e.target.value;
     if (num) { v = parseFloat(v); if (!isFinite(v)) { renderSettings(); return; } v = Math.min(+e.target.max, Math.max(+e.target.min, v)); }
@@ -800,7 +836,7 @@ import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecord
     r.strungKg = isFinite(v) ? +(unit === "lb" ? v / LB : v).toFixed(2) : null;
     persist(current); renderSettings();
   });
-  $("r-strungon").addEventListener("change", e => { R().strungOn = e.target.value || null; persist(current); renderSettings(); });
+  $("r-strungon").addEventListener("change", e => { R().strungOn = e.target.value || null; persist(current); renderSettings(); renderPlays(); });
   $("r-string").addEventListener("change", e => { R().stringName = e.target.value.trim() || null; persist(current); renderSettings(); });
   $("r-weight").addEventListener("change", e => { const v = parseInt(e.target.value, 10); R().weight = isFinite(v) ? v : null; persist(current); });
   bind("r-name", "name"); bind("r-head", "head", true); bind("r-gauge", "gauge", true); bind("r-mat", "material"); bind("r-pattern", "pattern");

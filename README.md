@@ -30,9 +30,20 @@ npm run db:migrate      # optional: create the tables now (the API also does it 
 
 Under **Play on these strings**, pick the type of play (singles, doubles, hitting, lesson or drills, ball machine, serves), how long, and the day, then press **Log play**. The big number is the hours played since the racket's **Strung on** date, so it starts again from zero when you restring and change that date. Your level (NTRP) and style of play (heavy topspin, flat and so on) are under **Your game**, saved with your account.
 
+## When to restring
+
+The **Restring** card shows how much life is left in each racket's strings, a projected restring date at your recent pace of play, and what is driving it. It takes the largest of four limits:
+
+- **Going dead.** Strings lose their snapback and control well before they break, polyester fastest (about 15 h for a 4.0 player, against about 25 h for multifilament and 35 h for natural gut). Higher levels and heavy topspin shorten it.
+- **Breaking.** Strings notch where they rub. Thinner gauges, open patterns (16x18), bigger heads, lower tension, heavy spin and harder hitting all cut the hours before a likely break; polyester and aramid last longest, natural gut and multifilament least.
+- **Tension loss.** Your saved readings since the **Strung on** date, compared with the tension you strung at (when calibrated after the restring) or with your first reading. Restring at about 25% down for polyester and 15–20% for softer strings.
+- **Age.** Strings go stale in the bag: about 2 months for polyester, 4–5 months for nylon and gut.
+
+Hours are weighted by type of play (drills and ball machine count more than doubles). The hour figures are typical values, not lab constants; your own readings refine the estimate. The model lives in `public/restring.js`, shared with the chat connector, and is tested in `test/restring.test.js`.
+
 ## Log play by chatting (Claude and other assistants)
 
-The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "I restrung the v8 today at 52 lb".
+The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "should I restring the v8?", "I restrung the v8 today at 52 lb".
 
 1. In the app, under **Chat assistant**, press **Make a connector link** and copy it. It looks like `https://<your-app>.vercel.app/api/mcp/sbm_...` and is shown once.
 2. In Claude, open **Settings → Connectors → Add custom connector**, give it a name (for example Stringbed) and paste the link as the server URL. No other sign-in is needed.
@@ -40,7 +51,7 @@ The app has a remote MCP server, so a chat assistant can log sessions for you: "
 
 The link is a password for your tennis data: anyone with it can read and add to your rackets. Remove it in the app (×) to turn it off. Assistants that can send headers can call `https://<your-app>.vercel.app/api/mcp` with `Authorization: Bearer sbm_...` instead.
 
-Tools: `log_play`, `list_rackets`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the link was made.
+Tools: `log_play`, `list_rackets`, `restring_advice`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the link was made.
 
 ## Put it on your iPhone
 
