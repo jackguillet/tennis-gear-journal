@@ -234,7 +234,55 @@
     return [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
   }
 
+  // ---------- regular weekly times ----------
+  const AREA_GROUPS = { indoor: ["2"], outdoor: ["3"], clay: ["4"], any: ["2", "3", "4"] };
+  const addDay = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  const dowOf = (d) => new Date(d + "T12:00:00Z").getUTCDay();
+  // The day a regular time can be booked now (on or before `lastOpen`, the furthest day GameTime takes),
+  // and the next one that hasn't opened yet. `nowMin` drops today's when it has already started.
+  function planDays(plan, today, lastOpen, nowMin = -1) {
+    let d = addDay(today, (plan.dow - dowOf(today) + 7) % 7);
+    const startMin = +plan.time.slice(0, 2) * 60 + +plan.time.slice(3, 5);
+    if (d === today && startMin <= nowMin) d = addDay(d, 7);
+    return d <= lastOpen ? { bookable: d, next: addDay(d, 7) } : { bookable: null, next: d };
+  }
+  // Open slots for a regular time, best first: the favourite court at (or near) the time, then any court
+  // in the area, nearest start first. Only starts within `within` minutes count.
+  function pickSlots(slots, startMin, court, within = 90) {
+    const fav = String(court || "").replace(/\D/g, "");
+    return slots.filter((x) => Math.abs(x.start - startMin) <= within)
+      .map((x) => ({ ...x, score: Math.abs(x.start - startMin) + (fav && x.court.replace(/\D/g, "") === fav ? -1000 : 0) }))
+      .sort((a, b) => a.score - b.score || a.court.localeCompare(b.court, undefined, { numeric: true }));
+  }
+  // GameTime's "Booking Not Available" page, in a sentence.
+  function bookError(html) {
+    const t = decode(String(html || "").replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " "));
+    const m = /Booking Not Available\s*(.*?)(?:Court Time:|Copyright|$)/i.exec(t);
+    return m ? m[1].trim().slice(0, 300) || "Booking not available." : null;
+  }
+  // How far ahead GameTime opens booking, from what the button has seen: each check records the club day,
+  // the minute of the day and how many days ahead the last bookable day was. A day opens `days` ahead;
+  // when one check saw it closed and a later one the same morning saw it open, the opening time is between.
+  function learnWindowFrom(history) {
+    const h = (history || []).filter((x) => x && x.day && Number.isFinite(x.min) && Number.isFinite(x.ahead));
+    if (!h.length) return null;
+    const days = Math.max(...h.map((x) => x.ahead));
+    let time = null, best = Infinity;
+    for (const day of new Set(h.map((x) => x.day))) {
+      const same = h.filter((x) => x.day === day);
+      const closed = same.filter((x) => x.ahead < days).map((x) => x.min), opened = same.filter((x) => x.ahead === days).map((x) => x.min);
+      if (!closed.length || !opened.length) continue;
+      const a = Math.max(...closed), b = Math.min(...opened.filter((m) => m > a));
+      if (!Number.isFinite(b) || b - a > 60 || b - a >= best) continue;
+      best = b - a;
+      const t = Math.min(b, Math.ceil((a + 1) / 15) * 15);
+      time = hhmm(t);
+    }
+    return { days, time };
+  }
+
   globalThis.SBM_GT = {
+    planDays, pickSlots, bookError, learnWindowFrom,
     openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
     jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
     upcomingUrl, eventsUrl, partnersUrl, waitlistUrl, bookUrl, sheetUrl, clock, hhmm,
@@ -337,6 +385,7 @@
       <div class="row" id="days"></div>
       <div class="row" id="groups" style="margin-top:8px"></div>
       <div id="slots"><p class="muted">Loading\u2026</p></div>
+      <div id="plans-box" hidden><h2>Your regular times</h2><div id="plans"></div></div>
       <h2>Your bookings</h2>
       <div id="mine"><p class="muted">Loading your bookings\u2026</p></div>
       <p class="muted">Dinner after tennis: tap this button on seattletennisclub.org while signed in.</p>
@@ -457,7 +506,90 @@
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "HTTP " + res.status);
       note.textContent = out.message || "Saved to Stringbed Meter and your court calendar.";
+      renderPlans(out.plans || [], out.window, found);
     } catch (e) { note.className = "err"; note.textContent = "Couldn't reach Stringbed Meter: " + e.message; }
+  }
+
+  // ---------- regular times: book the next one in one tap ----------
+  // Which days GameTime takes bookings for, checked by opening its booking form (without booking) for
+  // days a week or so out. Remembered for half an hour; every check also goes in a short history that
+  // pins down when a new day opens.
+  async function probeWindow() {
+    try { const c = JSON.parse(localStorage.getItem("sbm-gt-probe") || "null"); if (c && Date.now() - c.at < 30 * 60000) return c; } catch {}
+    let ahead = null, message = null;
+    for (let n = 5; n <= 10; n++) {
+      const d = addDays(today, n);
+      let s; try { s = await sheet(d, "2"); } catch { break; }
+      const court = ((s && s.e) || [])[0], w = court && (court.t || [])[court.t.length - 1];
+      if (!w) break;
+      const r = await fetch(bookUrl(court.i, d, Number(w.t)), { credentials: "same-origin" }).catch(() => null);
+      if (!r) break;
+      if (/bookerror/.test(r.url)) { message = bookError(await r.text()); break; }
+      ahead = n;
+    }
+    const out = { at: Date.now(), ahead, message, day: today, min: clubNowMin() };
+    try {
+      localStorage.setItem("sbm-gt-probe", JSON.stringify(out));
+      if (ahead != null) {
+        const h = JSON.parse(localStorage.getItem("sbm-gt-window") || "[]").concat([{ day: today, min: out.min, ahead }]).slice(-40);
+        localStorage.setItem("sbm-gt-window", JSON.stringify(h)); out.learned = learnWindowFrom(h);
+      }
+    } catch {}
+    return out;
+  }
+
+  async function renderPlans(plans, win, mine) {
+    if (!plans.length) return;
+    $("plans-box").hidden = false;
+    const box = $("plans"); box.innerHTML = '<p class="muted">Checking GameTime\u2026</p>';
+    const probe = await probeWindow();
+    if (probe.learned) {
+      fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, window: probe.learned }) }).catch(() => {});
+      win = { ...win, days: probe.learned.days, time: probe.learned.time || (win && win.time) };
+    }
+    const lastOpen = addDays(today, probe.ahead != null ? probe.ahead : (win ? win.days : 7));
+    const opensAt = (d) => { const o = addDays(d, -(win ? win.days : 7)); return dayLabel(o).replace(/^(Today|Tomorrow)$/, (x) => x.toLowerCase()) + (win && win.time ? " at " + clock(+win.time.slice(0, 2) * 60 + +win.time.slice(3)) : ""); };
+    box.textContent = "";
+    for (const p of plans) {
+      const div = document.createElement("div"); div.className = "item";
+      const startMin = +p.time.slice(0, 2) * 60 + +p.time.slice(3, 5);
+      const head = document.createElement("b");
+      head.textContent = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow] + " " + clock(startMin) + " \u00b7 " + p.min + " min" + (p.court ? " \u00b7 " + p.court : p.area !== "any" ? " \u00b7 " + ({ indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" })[p.area] : "");
+      div.appendChild(head);
+      if (p.note) { const m = document.createElement("div"); m.className = "meta"; m.textContent = p.note; div.appendChild(m); }
+      const { bookable, next } = planDays(p, today, lastOpen, clubNowMin());
+      const line = document.createElement("div"); line.className = "courts"; line.style.marginTop = "6px"; div.appendChild(line);
+      const later = document.createElement("div"); later.className = "meta";
+      later.textContent = "Next: " + dayLabel(next) + ", opens " + opensAt(next) + (win && !win.set && !probe.learned ? " (a guess until the button sees a new day open)" : "");
+      box.appendChild(div);
+      if (!bookable) { line.remove(); div.appendChild(later); continue; }
+      const booked = mine.some((b) => b.date === bookable && Math.abs(+b.time.slice(0, 2) * 60 + +b.time.slice(3) - startMin) <= 90);
+      const lbl = document.createElement("span"); lbl.className = "muted"; lbl.textContent = dayLabel(bookable) + ": "; line.appendChild(lbl);
+      if (booked) { const t = document.createElement("span"); t.className = "tag"; t.textContent = "Booked"; line.appendChild(t); div.appendChild(later); continue; }
+      try {
+        const sheets = await Promise.all((AREA_GROUPS[p.area] || AREA_GROUPS.any).map((g) => sheet(bookable, g)));
+        const seen = new Set();
+        const open = sheets.flatMap((s) => openSlots(s, { nowMin: bookable === today ? clubNowMin() : -1 }))
+          .filter((x) => { const k = x.courtId + "@" + x.start; if (seen.has(k)) return false; seen.add(k); return true; });
+        const best = pickSlots(open, startMin, p.court);
+        if (!best.length) {
+          const t = document.createElement("span"); t.className = "muted"; t.textContent = "nothing open near " + clock(startMin) + ". ";
+          const a = document.createElement("a"); a.href = waitlistJoinUrl; a.textContent = "Join the waitlist"; line.append(t, a);
+        } else {
+          best.slice(0, 4).forEach((x, i) => {
+            const a = document.createElement("a"); a.className = "slot"; a.href = bookUrl(x.courtId, bookable, x.start);
+            a.textContent = (i === 0 ? "Book " : "") + x.court.replace(/^Court\s*/i, "Ct ") + " \u00b7 " + clock(x.start);
+            if (i === 0) { a.style.background = "#1d4f7c"; a.style.color = "#fff"; a.style.borderColor = "#1d4f7c"; }
+            line.appendChild(a);
+          });
+        }
+      } catch { const t = document.createElement("span"); t.className = "err"; t.textContent = "couldn't read the court sheet."; line.appendChild(t); }
+      div.appendChild(later);
+    }
+    if (probe.message && probe.ahead != null) {
+      const m = document.createElement("p"); m.className = "muted";
+      m.textContent = "GameTime takes bookings up to " + dayLabel(addDays(today, probe.ahead)) + ". For later days it says: \u201c" + probe.message + "\u201d"; box.appendChild(m);
+    }
   }
 
   // ---------- tabs ----------
