@@ -269,6 +269,35 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <div class="row-btns" style="margin-top:10px"><button class="btn primary" id="bk-save" type="button">Save booking</button></div>
       <p class="small err-text" id="bk-err" hidden></p>
     </details>
+    <details id="plan-sub">
+      <summary>Regular times (claim the same court every week)</summary>
+      <p>Save the times you play every week. Your court calendar gets a "Book now" alert the minute GameTime opens each one, linking to the booking form, and the GameTime button shows the best open court for it in one tap. You always finish the booking on GameTime.</p>
+      <ol class="plays" id="plans"></ol>
+      <div class="grid2" style="margin-top:10px">
+        <div class="field"><label for="pl-dow">Day</label>
+          <select id="pl-dow"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select>
+        </div>
+        <div class="field"><label for="pl-time">Start</label><input id="pl-time" type="time" step="900" value="18:00"></div>
+        <div class="field"><label for="pl-len">Length</label>
+          <select id="pl-len"><option value="60">1 hour</option><option value="75" selected>1¼ hours</option><option value="90">1½ hours</option><option value="120">2 hours</option></select>
+        </div>
+        <div class="field"><label for="pl-area">Courts</label>
+          <select id="pl-area"><option value="any">Any</option><option value="indoor">Indoor (14–19)</option><option value="outdoor">Outdoor (1–8)</option><option value="clay">Pro &amp; clay (9–13)</option></select>
+        </div>
+        <div class="field"><label for="pl-court">Favourite court</label><input id="pl-court" type="text" maxlength="40" placeholder="e.g. Court 15"></div>
+        <div class="field"><label for="pl-kind">Type of play</label>
+          <select id="pl-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option></select>
+        </div>
+      </div>
+      <div class="field" style="margin-top:6px"><label for="pl-note">With (optional)</label><input id="pl-note" type="text" maxlength="120" placeholder="e.g. Marc"></div>
+      <div class="row-btns" style="margin-top:10px"><button class="btn primary" id="pl-save" type="button">Save regular time</button></div>
+      <p class="small" id="win-line" style="margin-top:12px"></p>
+      <div class="grid2">
+        <div class="field"><label for="win-days">Booking opens (days ahead)</label><input id="win-days" type="number" min="1" max="30" step="1"></div>
+        <div class="field"><label for="win-time">at</label><input id="win-time" type="time" step="900"></div>
+      </div>
+      <p class="small err-text" id="pl-err" hidden></p>
+    </details>
     <details id="cal-sub">
       <summary>Show bookings in my calendar</summary>
       <p>Subscribe once and every booking, added here or from a confirmation email through the chat assistant, shows up in Apple, Google or Outlook Calendar with a reminder an hour before. Calendars check for changes about every hour (Google can take up to a day), so use the calendar button on a booking to add it right away.</p>
@@ -461,7 +490,7 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
-import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ } from "./courts.js";
+import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle } from "./courts.js";
 import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings } from "./stringjobs.js";
 (() => {
   "use strict";
@@ -490,10 +519,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   function localLoad() { return lsGet(key("rackets"), {}); }
   let profile = { level: null, style: null };
   let bookings = [];      // court bookings: upcoming and the last two weeks
+  let plans = [];         // regular weekly court times
+  let bookWindow = { days: 7, time: "07:00", set: false }; // when the club opens booking for a day
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -577,6 +608,9 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     else if (op.op === "profile.put") profile = { ...op.data };
     else if (op.op === "booking.put") { const { op: _, ...b } = op; bookings = bookings.filter(x => x.id !== b.id).concat([{ ...b, playId: null }]).sort((a, c) => a.start - c.start); }
     else if (op.op === "booking.cancel") bookings = bookings.filter(x => x.id !== op.id);
+    else if (op.op === "plan.put") { const { op: _, ...p } = op; plans = plans.filter(x => x.id !== p.id).concat([p]).sort((a, c) => ((a.dow + 6) % 7) - ((c.dow + 6) % 7) || a.time.localeCompare(c.time)); }
+    else if (op.op === "plan.delete") plans = plans.filter(x => x.id !== op.id);
+    else if (op.op === "window.put") bookWindow = { days: op.days, time: op.time, set: true };
     else if (op.op === "racket.delete") delete rackets[op.id];
     else if (op.op === "reading.add") { const r = rackets[op.racketId]; if (r && !r.readings.some(x => x.id === op.id)) r.readings.push({ id: op.id, t: op.t, hz: op.hz, ...(op.s ? { s: op.s } : {}) }); }
     else if (op.op === "reading.delete") Object.values(rackets).forEach(r => { r.readings = r.readings.filter(x => x.id !== op.id); });
@@ -616,6 +650,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       rackets = body.rackets || {};
       if (body.profile) profile = body.profile;
       if (body.bookings) bookings = body.bookings;
+      if (body.plans) plans = body.plans;
+      if (body.window) bookWindow = body.window;
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
@@ -888,7 +924,26 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     Object.entries(rackets).forEach(([id, r]) => { const o = document.createElement("option"); o.value = id; o.textContent = r.name; sel.appendChild(o); });
     sel.value = rackets[keep] ? keep : "";
     if (!$("bk-date").value) $("bk-date").value = today();
+    renderPlans();
   }
+  function renderPlans() {
+    const ol = $("plans"); ol.textContent = "";
+    plans.forEach(p => {
+      const li = document.createElement("li");
+      const t = document.createElement("span"); t.className = "t";
+      const w = document.createElement("b"); w.textContent = planTitle(p);
+      t.append(w, document.createTextNode(" · " + hrs(p.min) + " h" + (p.note ? " · with " + p.note : "")));
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this regular time");
+      del.onclick = () => { queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); renderPlans(); };
+      li.append(t, del); ol.appendChild(li);
+    });
+    const at = new Date("2026-01-01T" + bookWindow.time + ":00").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    $("win-line").textContent = "GameTime opens each day " + bookWindow.days + " days ahead at " + at + "." +
+      (bookWindow.set ? "" : " That's a guess: the GameTime button works out the real time as you use it, or set it here.");
+    if (document.activeElement !== $("win-days")) $("win-days").value = bookWindow.days;
+    if (document.activeElement !== $("win-time")) $("win-time").value = bookWindow.time;
+  }
+  function plErr(m) { $("pl-err").textContent = m || ""; $("pl-err").hidden = !m; }
   function bkErr(m) { $("bk-err").textContent = m || ""; $("bk-err").hidden = !m; }
 
   // ---------- canvases ----------
@@ -1082,6 +1137,20 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     queue({ op: "booking.put", ...b }); applyLocal({ op: "booking.put", ...b }); localSave();
     bkErr(""); $("bk-court").value = ""; $("bk-add").open = false; renderBookings();
   };
+  $("pl-save").onclick = () => {
+    const tm = $("pl-time").value;
+    if (!/^\d{2}:\d{2}/.test(tm)) { plErr("Pick a start time."); return; }
+    const p = { id: uid(), dow: +$("pl-dow").value, time: tm.slice(0, 5), min: +$("pl-len").value, area: $("pl-area").value,
+      court: $("pl-court").value.trim() || null, kind: $("pl-kind").value, note: $("pl-note").value.trim() || null };
+    queue({ op: "plan.put", ...p }); applyLocal({ op: "plan.put", ...p }); localSave();
+    plErr(""); $("pl-court").value = ""; $("pl-note").value = ""; renderPlans();
+  };
+  const saveWindow = () => {
+    const days = Math.round(+$("win-days").value), time = ($("win-time").value || "").slice(0, 5);
+    if (!(days >= 1 && days <= 30) || !/^\d{2}:\d{2}$/.test(time)) { plErr("Booking opens 1 to 30 days ahead, at a time like 7:00 am."); return; }
+    plErr(""); queue({ op: "window.put", days, time }); applyLocal({ op: "window.put", days, time }); localSave(); renderPlans();
+  };
+  $("win-days").addEventListener("change", saveWindow); $("win-time").addEventListener("change", saveWindow);
   $("play-date").addEventListener("change", e => { playDatePicked = !!e.target.value && e.target.value !== today(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) renderPlays(); });
   $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); renderRestring(); };
@@ -1223,6 +1292,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
     profile = lsGet(key("profile"), { level: null, style: null });
     bookings = lsGet(key("bookings"), []);
+    plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, time: "07:00", set: false });
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();

@@ -55,3 +55,9 @@ Dining reservations (all GET, member session cookie): `/api/v1/dining/GetAvailab
 Court sheet lesson blocks: GameTime's "Lesson" and "Lesson Available" reservation types share colour `adcf53`; a block with a pro's name in `j` and no players is lesson time the pro is holding. Pro Shop: (206) 324-5454.
 
 The portal at www.seattletennisclub.org has a JSON API under `/api/v1/` (dining reservations, events, roster, my bookings). Club tennis rules that the app uses: cancel at least 6 hours before a court time (a no-show can mean a one-week suspension), check in at the Pro Shop before playing, book the ball machine on the day only, wear mostly-white clothing (tennis shoes can be any colour). Address: 922 McGilvra Blvd E, Seattle, WA 98112.
+
+## Booking window
+
+STC members book about a week ahead (Jack, 2026-10-29); the exact opening time isn't published. Opening `/scheduling/index/book/sport/2/court/<i>/date/<d>/time/<min>` for a day GameTime won't take yet redirects to `/scheduling/bookerror/index/sport/2` with a "Booking Not Available" message (for a past time it says "The court time is in the past."). A plain GET of the booking form holds nothing: the hold is a separate `POST /scheduling/index/jsontempreserve` made by the form's script. The GameTime button uses the redirect to find the last bookable day and, over several taps, the opening time (`learnWindowFrom` in `public/stc.js`).
+
+GameTime court ids (from the court sheet): courts 1 to 8 are 14, 15, 16, 20, 17, 18, 19, 21 (group 3); courts 14 to 19 are 8 to 13 (group 2). Courts 9 to 13 (group 4) weren't in a recording.
