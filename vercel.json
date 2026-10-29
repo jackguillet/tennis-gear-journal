@@ -13,6 +13,10 @@
     {
       "source": "/api/calendar/:token",
       "destination": "/api/calendar?token=:token"
+    },
+    {
+      "source": "/api/log/:token",
+      "destination": "/api/log?token=:token"
     }
   ],
   "headers": [

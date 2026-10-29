@@ -53,6 +53,18 @@ Press **Record a restring** in the Racket section each time a racket is restrung
 
 Under **Restring reminders** in the Racket section, turn on notifications for the phone. Every morning (a Vercel cron at 17:00 UTC calls `/api/reminders`) each racket is checked, and you get one notification when it reaches *Restring soon* and one at *Restring now*, per set of strings. On iPhone this needs the app added to the Home Screen (iOS 16.4 or later). The Web Push keys are made on first use and kept in the database (or set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`). Set `CRON_SECRET` in Vercel so only its cron can start the check. Code: `lib/push.js`, `api/push.js`, `api/reminders.js`, and the `push` handler in `public/sw.js`.
 
+## Tabs
+
+The app has four tabs along the bottom: **Measure** (tap the strings, tension history, calibration, how it works), **Play** (log sessions, court bookings), **Gear** (all your gear at a glance, restring estimate, string history, racket settings, shoes) and **Account** (your game, reminders, quick log, chat assistant, backup). The racket picker stays at the top.
+
+## Shoes
+
+The **Shoes** card on the Gear tab tracks the pair you play in. Every session you log, on any racket and from anywhere (the app, chat, quick log, court bookings), counts toward the pair in use; adding a new pair retires the old one that day. Expected life starts at 60 h and, once a pair or two is retired, a new pair starts from what yours actually lasted. Reminders cover shoes too, and the chat connector has `list_shoes`. Logic: `public/shoes.js`.
+
+## Quick log
+
+On the Account tab, **Make my quick-log link** gives a private link (scope `log`) that can only add and undo play sessions. Opened in Safari it's a page of big buttons that can go on the Home Screen. An iPhone Shortcut can POST JSON to it (`{"kind": "singles", "minutes": 90}`, optionally `racket` and `date`) and gets one line of text back to show. Code: `api/log.js`.
+
 ## Undo
 
 Removing a reading, a session, a string-history entry or a whole racket shows an **Undo** bar for 8 seconds.
