@@ -238,13 +238,18 @@
   const AREA_GROUPS = { indoor: ["2"], outdoor: ["3"], clay: ["4"], any: ["2", "3", "4"] };
   const addDay = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
   const dowOf = (d) => new Date(d + "T12:00:00Z").getUTCDay();
-  // The day a regular time can be booked now (on or before `lastOpen`, the furthest day GameTime takes),
-  // and the next one that hasn't opened yet. `nowMin` drops today's when it has already started.
-  function planDays(plan, today, lastOpen, nowMin = -1) {
+  // The day a regular time can be booked now and the next one that hasn't opened yet. `nowMin` (minutes
+  // into the club's day) drops today's when it has already started.
+  // GameTime opens each court time `days` days before it ends, on the club's clock (a Friday 2:15 to
+  // 3:30 pm court opens at 3:30 pm the Friday before). `opens` is when `next` opens: a date and minute.
+  function planDays(plan, today, nowMin = -1, days = 7) {
     let d = addDay(today, (plan.dow - dowOf(today) + 7) % 7);
-    const startMin = +plan.time.slice(0, 2) * 60 + +plan.time.slice(3, 5);
+    const startMin = +plan.time.slice(0, 2) * 60 + +plan.time.slice(3, 5), end = startMin + (Number(plan.min) || 60);
     if (d === today && startMin <= nowMin) d = addDay(d, 7);
-    return d <= lastOpen ? { bookable: d, next: addDay(d, 7) } : { bookable: null, next: d };
+    const ahead = Math.round((Date.parse(d) - Date.parse(today)) / 864e5);
+    const open = (ahead - days) * 1440 + end <= nowMin;
+    const next = open ? addDay(d, 7) : d;
+    return { bookable: open ? d : null, next, opens: { date: addDay(next, Math.floor(end / 1440) - days), min: end % 1440 } };
   }
   // Open slots for a regular time, best first: the favourite court at (or near) the time, then any court
   // in the area, nearest start first. Only starts within `within` minutes count.
@@ -254,33 +259,18 @@
       .map((x) => ({ ...x, score: Math.abs(x.start - startMin) + (fav && x.court.replace(/\D/g, "") === fav ? -1000 : 0) }))
       .sort((a, b) => a.score - b.score || a.court.localeCompare(b.court, undefined, { numeric: true }));
   }
-  // GameTime's "Booking Not Available" page, in a sentence.
+  // GameTime's "Booking Not Available" page, in a sentence (it ends before "Time:" or "Court Time:").
   function bookError(html) {
     const t = decode(String(html || "").replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/g, " "));
-    const m = /Booking Not Available\s*(.*?)(?:Court Time:|Copyright|$)/i.exec(t);
+    const m = /Booking Not Available\s*(.*?)(?:\b(?:Court )?Time:|Copyright|$)/i.exec(t);
     return m ? m[1].trim().slice(0, 300) || "Booking not available." : null;
   }
-  // How far ahead GameTime opens booking, from what the button has seen: each check records the club day,
-  // the minute of the day and how many days ahead the last bookable day was. A day opens `days` ahead;
-  // when one check saw it closed and a later one the same morning saw it open, the opening time is between.
-  function learnWindowFrom(history) {
-    const h = (history || []).filter((x) => x && x.day && Number.isFinite(x.min) && Number.isFinite(x.ahead));
-    if (!h.length) return null;
-    const days = Math.max(...h.map((x) => x.ahead));
-    let time = null, best = Infinity;
-    for (const day of new Set(h.map((x) => x.day))) {
-      const same = h.filter((x) => x.day === day);
-      const closed = same.filter((x) => x.ahead < days).map((x) => x.min), opened = same.filter((x) => x.ahead === days).map((x) => x.min);
-      if (!closed.length || !opened.length) continue;
-      const a = Math.max(...closed), b = Math.min(...opened.filter((m) => m > a));
-      if (!Number.isFinite(b) || b - a > 60 || b - a >= best) continue;
-      best = b - a;
-      const t = Math.min(b, Math.ceil((a + 1) / 15) * 15);
-      time = hhmm(t);
-    }
-    return { days, time };
+  // What that sentence says about the window: "not allowed to book more than 7 days in advance. Please
+  // wait for 12 minute(s)." gives { days: 7, wait: 12 }. Either can be null.
+  function bookLimit(text) {
+    const s = String(text || ""), d = /more than (\d+) days? in advance/i.exec(s), w = /wait for (\d+) minute/i.exec(s);
+    return d || w ? { days: d ? +d[1] : null, wait: w ? +w[1] : null } : null;
   }
-
   // One day's sheet as a grid: a column per court, a row per slot time, each cell open, booked, the
   // member's own, a lesson, a club event or closed (outside the court's bookable hours).
   function sheetGrid(sheets, userId, { nowMin = -1 } = {}) {
@@ -316,7 +306,7 @@
 
   globalThis.SBM_GT = {
     sheetGrid, freeSlots,
-    planDays, pickSlots, bookError, learnWindowFrom,
+    planDays, pickSlots, bookError, bookLimit,
     openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
     jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
     upcomingUrl, eventsUrl, partnersUrl, waitlistUrl, bookUrl, sheetUrl, clock, hhmm,
@@ -415,6 +405,7 @@
       <button class="tab" role="tab" data-tab="partners" aria-selected="false">Partners</button>
     </div>
     <section id="tab-courts">
+      <p id="too-soon" class="err" hidden></p>
       <p class="muted">Tap a court to open GameTime's booking form for it.</p>
       <div class="row" id="views" style="margin-bottom:8px"></div>
       <div class="row" id="days"></div>
@@ -448,6 +439,15 @@
     </section>
   </div></div>`);
   const $ = (id) => root.getElementById(id);
+  // Tapped on GameTime's "Booking Not Available" page: say when that court opens.
+  if (/bookerror/.test(location.pathname)) {
+    const lim = bookLimit(bookError(document.body ? document.body.innerHTML : ""));
+    if (lim && lim.wait != null) {
+      const at = Math.round((clubNowMin() + lim.wait) / 5) * 5 % 1440;
+      $("too-soon").textContent = "Too early: that court opens at about " + clock(at) + " (in " + lim.wait + " min). GameTime opens each court time " + (lim.days || 7) + " days before it ends. Go back and try again then.";
+      $("too-soon").hidden = false;
+    }
+  }
 
   const days = Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i));
   let day = days[0], groups = new Set(GROUPS.map(([g]) => g));
@@ -593,29 +593,20 @@
   }
 
   // ---------- regular times: book the next one in one tap ----------
-  // Which days GameTime takes bookings for, checked by opening its booking form (without booking) for
-  // days a week or so out. Remembered for half an hour; every check also goes in a short history that
-  // pins down when a new day opens.
+  // How many days ahead GameTime opens a court time, read from its refusal: the button opens the booking
+  // form (without booking) for a slot 8 days out, which is always too far, and reads "not allowed to
+  // book more than N days in advance". Remembered for a day.
   async function probeWindow() {
-    try { const c = JSON.parse(localStorage.getItem("sbm-gt-probe") || "null"); if (c && Date.now() - c.at < 30 * 60000) return c; } catch {}
-    let ahead = null, message = null;
-    for (let n = 5; n <= 10; n++) {
-      const d = addDays(today, n);
-      let s; try { s = await sheet(d, "2"); } catch { break; }
-      const court = ((s && s.e) || [])[0], w = court && (court.t || [])[court.t.length - 1];
-      if (!w) break;
-      const r = await fetch(bookUrl(court.i, d, Number(w.t)), { credentials: "same-origin" }).catch(() => null);
-      if (!r) break;
-      if (/bookerror/.test(r.url)) { message = bookError(await r.text()); break; }
-      ahead = n;
-    }
-    const out = { at: Date.now(), ahead, message, day: today, min: clubNowMin() };
+    try { const c = JSON.parse(localStorage.getItem("sbm-gt-probe2") || "null"); if (c && Date.now() - c.at < 864e5) return c; } catch {}
+    const out = { at: Date.now(), days: null, message: null };
     try {
-      localStorage.setItem("sbm-gt-probe", JSON.stringify(out));
-      if (ahead != null) {
-        const h = JSON.parse(localStorage.getItem("sbm-gt-window") || "[]").concat([{ day: today, min: out.min, ahead }]).slice(-40);
-        localStorage.setItem("sbm-gt-window", JSON.stringify(h)); out.learned = learnWindowFrom(h);
+      const d = addDays(today, 8), s = await sheet(d, "2");
+      const court = ((s && s.e) || [])[0], w = court && (court.t || [])[0];
+      if (w) {
+        const r = await fetch(bookUrl(court.i, d, Number(w.t)), { credentials: "same-origin" });
+        if (/bookerror/.test(r.url)) { out.message = bookError(await r.text()); out.days = (bookLimit(out.message) || {}).days || null; }
       }
+      localStorage.setItem("sbm-gt-probe2", JSON.stringify(out));
     } catch {}
     return out;
   }
@@ -625,12 +616,11 @@
     $("plans-box").hidden = false;
     const box = $("plans"); box.innerHTML = '<p class="muted">Checking GameTime\u2026</p>';
     const probe = await probeWindow();
-    if (probe.learned) {
-      fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, window: probe.learned }) }).catch(() => {});
-      win = { ...win, days: probe.learned.days, time: probe.learned.time || (win && win.time) };
+    if (probe.days && (!win || probe.days !== win.days || !win.set)) {
+      fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, window: { days: probe.days } }) }).catch(() => {});
     }
-    const lastOpen = addDays(today, probe.ahead != null ? probe.ahead : (win ? win.days : 7));
-    const opensAt = (d) => { const o = addDays(d, -(win ? win.days : 7)); return dayLabel(o).replace(/^(Today|Tomorrow)$/, (x) => x.toLowerCase()) + (win && win.time ? " at " + clock(+win.time.slice(0, 2) * 60 + +win.time.slice(3)) : ""); };
+    const days = probe.days || (win && win.days) || 7;
+    const opensAt = (o) => dayLabel(o.date).replace(/^(Today|Tomorrow)$/, (x) => x.toLowerCase()) + " at " + clock(o.min);
     box.textContent = "";
     for (const p of plans) {
       const div = document.createElement("div"); div.className = "item";
@@ -639,10 +629,10 @@
       head.textContent = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow] + " " + clock(startMin) + " \u00b7 " + p.min + " min" + (p.court ? " \u00b7 " + p.court : p.area !== "any" ? " \u00b7 " + ({ indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" })[p.area] : "");
       div.appendChild(head);
       if (p.note) { const m = document.createElement("div"); m.className = "meta"; m.textContent = p.note; div.appendChild(m); }
-      const { bookable, next } = planDays(p, today, lastOpen, clubNowMin());
+      const { bookable, next, opens } = planDays(p, today, clubNowMin(), days);
       const line = document.createElement("div"); line.className = "courts"; line.style.marginTop = "6px"; div.appendChild(line);
       const later = document.createElement("div"); later.className = "meta";
-      later.textContent = "Next: " + dayLabel(next) + ", opens " + opensAt(next) + (win && !win.set && !probe.learned ? " (a guess until the button sees a new day open)" : "");
+      later.textContent = "Next: " + dayLabel(next) + ", opens " + opensAt(opens) + ".";
       box.appendChild(div);
       if (!bookable) { line.remove(); div.appendChild(later); continue; }
       const booked = mine.some((b) => b.date === bookable && Math.abs(+b.time.slice(0, 2) * 60 + +b.time.slice(3) - startMin) <= 90);
@@ -668,10 +658,9 @@
       } catch { const t = document.createElement("span"); t.className = "err"; t.textContent = "couldn't read the court sheet."; line.appendChild(t); }
       div.appendChild(later);
     }
-    if (probe.message && probe.ahead != null) {
-      const m = document.createElement("p"); m.className = "muted";
-      m.textContent = "GameTime takes bookings up to " + dayLabel(addDays(today, probe.ahead)) + ". For later days it says: \u201c" + probe.message + "\u201d"; box.appendChild(m);
-    }
+    const m = document.createElement("p"); m.className = "muted";
+    m.textContent = "Each court time opens " + (days === 7 ? "exactly a week" : days + " days") + " before it ends, so a 2:15 to 3:30 pm court opens at 3:30 pm " + (days === 7 ? "a week earlier." : days + " days earlier.");
+    box.appendChild(m);
   }
 
   // ---------- tabs ----------

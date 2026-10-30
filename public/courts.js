@@ -63,14 +63,16 @@ export function planTitle(plan) {
   return DAY_NAMES[plan.dow].slice(0, 3) + " " + ((h % 12) || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " am" : " pm") +
     " court" + (plan.court ? " (" + plan.court + ")" : plan.area && plan.area !== "any" ? " (" + AREA_NAMES[plan.area] + ")" : "");
 }
-// The coming days a regular time falls on, each with the moment the club opens booking for it
-// (`win.days` days before, at `win.time`). Days already booked are left out.
+// The coming days a regular time falls on, each with the moment the club opens booking for it.
+// GameTime opens each court time exactly `win.days` days (7 at STC) before it ends, on the club's clock:
+// a Friday 2:15 to 3:30 pm court opens at 3:30 pm the Friday before.
 export function planOpenings(plans, win, bookings = [], { now = Date.now(), weeks = 3, tz = DEFAULT_TZ } = {}) {
   const out = [], today = localDate(now, tz);
   for (const p of plans || []) {
     let d = addDays(today, (p.dow - weekday(today) + 7) % 7);
     for (let i = 0; i < weeks + 1; i++, d = addDays(d, 7)) {
-      const start = zonedToUtc(d, p.time, tz), opensAt = zonedToUtc(addDays(d, -win.days), win.time, tz);
+      const end = toMin(p.time) + (Number(p.min) || 60), day = addDays(d, Math.floor(end / 1440) - win.days), m = end % 1440;
+      const start = zonedToUtc(d, p.time, tz), opensAt = zonedToUtc(day, String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"), tz);
       if (start <= now) continue;
       const booked = bookings.some((b) => !b.cancelled && Math.abs(b.start - start) <= 90 * 60000);
       out.push({ plan: p, date: d, start, opensAt, booked, open: opensAt <= now });

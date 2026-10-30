@@ -437,8 +437,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
         <summary class="small">When GameTime opens booking</summary>
         <p id="win-line"></p>
         <div class="grid2" style="margin-top:10px">
-          <div class="field"><label for="win-days">Days ahead</label><input id="win-days" type="number" min="1" max="30" step="1"></div>
-          <div class="field"><label for="win-time">At</label><input id="win-time" type="time" step="900"></div>
+          <div class="field"><label for="win-days">Days before it ends</label><input id="win-days" type="number" min="1" max="30" step="1"></div>
         </div>
       </details>
       <p class="small err-text" id="pl-err" hidden></p>
@@ -788,7 +787,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   let bookings = [];      // court bookings: upcoming and the last two weeks
   let shoes = [];         // pairs of tennis shoes, newest last
   let plans = [];         // regular weekly court times
-  let bookWindow = { days: 7, time: "07:00", set: false }; // when the club opens booking for a day
+  let bookWindow = { days: 7, set: false }; // GameTime opens each court time this many days before it ends
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
@@ -880,7 +879,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     else if (op.op === "booking.cancel") bookings = bookings.filter(x => x.id !== op.id);
     else if (op.op === "plan.put") { const { op: _, ...p } = op; plans = plans.filter(x => x.id !== p.id).concat([p]).sort((a, c) => ((a.dow + 6) % 7) - ((c.dow + 6) % 7) || a.time.localeCompare(c.time)); }
     else if (op.op === "plan.delete") plans = plans.filter(x => x.id !== op.id);
-    else if (op.op === "window.put") bookWindow = { days: op.days, time: op.time, set: true };
+    else if (op.op === "window.put") bookWindow = { days: op.days, set: true };
     else if (op.op === "racket.delete") delete rackets[op.id];
     else if (op.op === "shoe.put") shoes = shoes.filter(x => x.id !== op.id).concat([{ id: op.id, ...op.data }]);
     else if (op.op === "shoe.delete") shoes = shoes.filter(x => x.id !== op.id);
@@ -1447,11 +1446,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       del.onclick = () => { queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); renderPlans(); };
       li.append(t, del); ol.appendChild(li);
     });
-    const at = new Date("2026-01-01T" + bookWindow.time + ":00").toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-    $("win-line").textContent = "GameTime opens each day " + bookWindow.days + " days ahead at " + at + "." +
-      (bookWindow.set ? "" : " That's a guess: the GameTime button works out the real time as you use it, or set it here.");
-    if (document.activeElement !== $("win-days")) $("win-days").value = bookWindow.days;
-    if (document.activeElement !== $("win-time")) $("win-time").value = bookWindow.time;
+    const n = bookWindow.days;
+    $("win-line").textContent = "GameTime opens each court time " + (n === 7 ? "exactly a week" : n + " days") + " before it ends, so a 2:15 to 3:30 pm court opens at 3:30 pm " +
+      (n === 7 ? "the same day a week earlier" : n + " days earlier") + ". Your \u201cBook now\u201d alerts go off at that minute.";
+    if (document.activeElement !== $("win-days")) $("win-days").value = n;
   }
   function plErr(m) { $("pl-err").textContent = m || ""; $("pl-err").hidden = !m; }
   function bkErr(m) { $("bk-err").textContent = m || ""; $("bk-err").hidden = !m; }
@@ -1673,11 +1671,11 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     plErr(""); $("pl-court").value = ""; $("pl-note").value = ""; renderPlans();
   };
   const saveWindow = () => {
-    const days = Math.round(+$("win-days").value), time = ($("win-time").value || "").slice(0, 5);
-    if (!(days >= 1 && days <= 30) || !/^\d{2}:\d{2}$/.test(time)) { plErr("Booking opens 1 to 30 days ahead, at a time like 7:00 am."); return; }
-    plErr(""); queue({ op: "window.put", days, time }); applyLocal({ op: "window.put", days, time }); localSave(); renderPlans();
+    const days = Math.round(+$("win-days").value);
+    if (!(days >= 1 && days <= 30)) { plErr("Booking opens 1 to 30 days before a court time ends."); return; }
+    plErr(""); queue({ op: "window.put", days }); applyLocal({ op: "window.put", days }); localSave(); renderPlans();
   };
-  $("win-days").addEventListener("change", saveWindow); $("win-time").addEventListener("change", saveWindow);
+  $("win-days").addEventListener("change", saveWindow);
   $("play-date").addEventListener("change", e => { playDatePicked = !!e.target.value && e.target.value !== today(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && user) renderPlays(); });
   $("p-level").onchange = e => { profile.level = e.target.value || null; saveProfile(); renderRestring(); };
@@ -1906,7 +1904,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     profile = lsGet(key("profile"), { level: null, style: null });
     bookings = lsGet(key("bookings"), []);
     shoes = lsGet(key("shoes"), []);
-    plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, time: "07:00", set: false });
+    plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, set: false }); if (bookWindow.time) bookWindow = { days: 7, set: false };
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();
