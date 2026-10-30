@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever a file changes so phones pick up the update.
-const VERSION = "tennishub-v17";
+const VERSION = "tennishub-v18";
 const FILES = ["./", "index.html", "tension.js", "restring.js", "courts.js", "stringjobs.js", "shoes.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -16,7 +16,7 @@ self.addEventListener("fetch", e => {
   const req = e.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
-  if (url.pathname.startsWith("/api/")) return; // never cache account data
+  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/")) return; // never cache account data or sign-in
   const net = fetch(req).then(res => {
     if (res.ok && url.origin === location.origin) {
       const copy = res.clone(); caches.open(VERSION).then(c => c.put(req, copy));

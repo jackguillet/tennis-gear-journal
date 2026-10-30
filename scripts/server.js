@@ -34,14 +34,14 @@ export async function startServer({ port = 3000, useDatabaseUrl = false } = {}) 
     process.env.NEON_AUTH_BASE_URL = origin + localAuth.basePath;
   }
   process.env.NEON_AUTH_COOKIE_SECRET ||= "local-cookie-secret-local-cookie-secret-0123";
-  const routes = { "/api/sync": await import("../api/sync.js"), "/api/tokens": await import("../api/tokens.js"), "/api/mcp": await import("../api/mcp.js"), "/api/calendar": await import("../api/calendar.js"), "/api/gametime": await import("../api/gametime.js"), "/api/push": await import("../api/push.js"), "/api/reminders": await import("../api/reminders.js"), "/api/log": await import("../api/log.js") };
+  const routes = { "/api/sync": await import("../api/sync.js"), "/api/tokens": await import("../api/tokens.js"), "/api/mcp": await import("../api/mcp.js"), "/api/calendar": await import("../api/calendar.js"), "/api/gametime": await import("../api/gametime.js"), "/api/push": await import("../api/push.js"), "/api/reminders": await import("../api/reminders.js"), "/api/log": await import("../api/log.js"), "/api/oauth": await import("../api/oauth.js") };
   const authRoute = await import("../api/auth.js");
 
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, origin);
       if (localAuth && url.pathname.startsWith(localAuth.basePath + "/")) return send(res, await localAuth.handler(await toRequest(req, origin)));
-      const mod = url.pathname.startsWith("/api/auth/") ? authRoute : url.pathname.startsWith("/api/mcp/") ? routes["/api/mcp"] : url.pathname.startsWith("/api/log/") ? routes["/api/log"] : url.pathname.startsWith("/api/calendar/") ? routes["/api/calendar"] : routes[url.pathname];
+      const mod = url.pathname.startsWith("/api/auth/") ? authRoute : url.pathname.startsWith("/oauth/") || url.pathname.startsWith("/.well-known/oauth-") ? routes["/api/oauth"] : url.pathname.startsWith("/api/mcp/") ? routes["/api/mcp"] : url.pathname.startsWith("/api/log/") ? routes["/api/log"] : url.pathname.startsWith("/api/calendar/") ? routes["/api/calendar"] : routes[url.pathname];
       if (mod) {
         const handler = mod[req.method];
         if (!handler) { res.writeHead(405).end(); return; }

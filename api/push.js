@@ -2,6 +2,7 @@ import { db } from "../lib/db.js";
 import { currentUser } from "../lib/auth.js";
 import { serializeSetCookie } from "@neondatabase/auth/server";
 import { ensureSchema } from "../lib/schema.js";
+import { ensureUser } from "../lib/users.js";
 import { vapidKeys, saveSubscription, removeSubscription, subscriptionCount, notify } from "../lib/push.js";
 import { json, readJson } from "../lib/http.js";
 
@@ -22,6 +23,7 @@ async function handle(request) {
   try {
     const store = db();
     await ensureSchema(store);
+    await ensureUser(store, user);
     if (request.method === "GET") return reply({ publicKey: (await vapidKeys(store)).publicKey, phones: await subscriptionCount(store, user.id) });
     const body = await readJson(request, 8192);
     if (request.method === "DELETE") {
