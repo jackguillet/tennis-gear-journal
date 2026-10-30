@@ -11,7 +11,7 @@ import { json } from "../lib/http.js";
 // https://<site>/api/mcp with "Authorization: Bearer <secret>" instead.
 
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
-const INSTRUCTIONS = "Stringbed Meter keeps a tennis player's rackets, string tension readings and play sessions. "
+const INSTRUCTIONS = "Tennis Hub (formerly Stringbed Meter) keeps a tennis player's rackets, string tension readings and play sessions. "
   + "When the person says they played (for example 'I played an hour of singles'), call log_play. "
   + "For questions about string wear or when to restring, call restring_advice. "
   + "When the person shares a court booking confirmation (for example a Seattle Tennis Club / GameTime email), call add_court_booking; "
@@ -36,7 +36,7 @@ async function answer(msg, store, user) {
       return ok({
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "stringbed-meter", title: "Stringbed Meter", version: "1.0.0" },
+        serverInfo: { name: "stringbed-meter", title: "Tennis Hub", version: "1.0.0" },
         instructions: INSTRUCTIONS,
       });
     }
@@ -59,7 +59,7 @@ export async function POST(request) {
     await ensureSchema(store);
     user = await userForToken(store, secretFrom(request));
   } catch (e) { console.error(e); return json(rpcError(null, -32603, "The server isn't ready."), 503); }
-  if (!user) return json(rpcError(null, -32001, "This connector link isn't valid. Make a new one in the Stringbed Meter app."), 401);
+  if (!user) return json(rpcError(null, -32001, "This connector link isn't valid. Make a new one in the Tennis Hub app."), 401);
   let body;
   try { body = JSON.parse(await request.text()); } catch { return json(rpcError(null, -32700, "Parse error."), 400); }
   try {

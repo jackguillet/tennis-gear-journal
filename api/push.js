@@ -29,7 +29,7 @@ async function handle(request) {
       return reply({ phones: await subscriptionCount(store, user.id) });
     }
     if (body.test) {
-      const sent = await notify(store, user.id, { title: "Stringbed Meter", body: "Reminders are on. You'll hear from the app when a racket needs restringing.", tag: "test", url: "./" });
+      const sent = await notify(store, user.id, { title: "Tennis Hub", body: "Reminders are on. You'll hear from the app when a racket needs restringing.", tag: "test", url: "./" });
       return reply({ sent });
     }
     await saveSubscription(store, user.id, body.subscription, body.timezone);

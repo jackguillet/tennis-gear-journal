@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Stringbed Meter: measure tennis string-bed tension from the sound of a tap. Accounts with Neon Auth, data in Neon Postgres, hosted on Vercel.",
+  "description": "Tennis Hub (formerly Stringbed Meter): log play, track strings and shoes, book courts and measure tennis string-bed tension from the sound of a tap. Accounts with Neon Auth, data in Neon Postgres, hosted on Vercel.",
   "engines": {
     "node": ">=20"
   },

@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Stringbed Meter</title>
-<meta name="description" content="Tap your tennis racket's strings and read the string-bed tension from the pitch.">
+<title>Tennis Hub</title>
+<meta name="description" content="Log your tennis, track strings and shoes, keep your court bookings and measure string tension from the sound of a tap.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Stringbed">
+<meta name="apple-mobile-web-app-title" content="Tennis Hub">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="theme-color" content="#eef1f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#f3f5f8" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e1620" media="(prefers-color-scheme: dark)">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -17,36 +17,42 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Fonts load without holding up the page: on weak Wi-Fi the app shows at once in system fonts. -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" media="print" onload="this.media='all'">
 <style>
-/* Layout: one narrow column, phone first. A big readout on a string-grid panel, then racket settings, then history. */
+/* Layout ("Courtside"): one phone-width column. Each tab opens with a large title; Today puts the
+   answers first (string life, shoes, tension, next court) and logs the usual session in one tap.
+   Set-once things live in Settings, behind your initials. */
 :root {
-  --bg: #eef1f4;
+  --bg: #f3f5f8;
   --panel: #ffffff;
   --ink: #142233;
-  --muted: #5b6b7c;
-  --line: #d5dce4;
+  --muted: #5f6f82;
+  --line: #e1e6ec;
   --court: #1d4f7c;      /* hard-court blue, the accent */
-  --court-soft: #dce8f3;
-  --optic: #c9dc3a;      /* ball yellow, used once on the readout */
-  --good: #2e7d4f;
-  --warn: #b26a00;
-  --bad: #b3261e;
+  --court-soft: #e3edf7;
+  --optic: #c9dc3a;      /* ball yellow */
+  --good: #2e7d4f; --good-soft: #e2f3e8;
+  --warn: #b26a00; --warn-soft: #fdf0db;
+  --bad: #b3261e;  --bad-soft: #fbe3e1;
+  --shadow: 0 1px 2px rgba(20,34,51,.06), 0 1px 1px rgba(20,34,51,.03);
+  --scrim: rgba(12,20,30,.45);
   --f-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
   --f-body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #95a6b8; --line: #2a3a4b;
+    --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #97a8ba; --line: #283849;
     --court: #6aa8de; --court-soft: #1c3046; --optic: #d4e64d;
-    --good: #5fc48a; --warn: #e0a33a; --bad: #ef7d74; color-scheme: dark;
+    --good: #5fc48a; --good-soft: #173527; --warn: #e0a33a; --warn-soft: #3a2b12; --bad: #ef7d74; --bad-soft: #3d1d1b;
+    --shadow: 0 0 0 1px #223243; --scrim: rgba(0,0,0,.6); color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #95a6b8; --line: #2a3a4b;
+  --bg: #0e1620; --panel: #16212d; --ink: #e6edf4; --muted: #97a8ba; --line: #283849;
   --court: #6aa8de; --court-soft: #1c3046; --optic: #d4e64d;
-  --good: #5fc48a; --warn: #e0a33a; --bad: #ef7d74; color-scheme: dark;
+  --good: #5fc48a; --good-soft: #173527; --warn: #e0a33a; --warn-soft: #3a2b12; --bad: #ef7d74; --bad-soft: #3d1d1b;
+  --shadow: 0 0 0 1px #223243; --scrim: rgba(0,0,0,.6); color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { color-scheme: light; -webkit-text-size-adjust: 100%; }
@@ -55,148 +61,240 @@ img { max-width: 100%; }
 body {
   margin: 0;
   background: var(--bg); color: var(--ink);
-  font: 16px/1.5 var(--f-body);
+  font: 16px/1.45 var(--f-body);
   padding-left: max(16px, env(safe-area-inset-left, 0px));
   padding-right: max(16px, env(safe-area-inset-right, 0px));
-  padding-top: calc(20px + env(safe-area-inset-top, 0px));
+  padding-top: calc(14px + env(safe-area-inset-top, 0px));
   padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
   -webkit-tap-highlight-color: transparent;
 }
-.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-h1 { font: 700 30px/1 var(--f-display); letter-spacing: .01em; margin: 0; text-transform: uppercase; }
-h2 { font: 700 18px/1.2 var(--f-display); text-transform: uppercase; letter-spacing: .06em; margin: 0; color: var(--muted); }
-.units { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
-.units button { border: 0; background: transparent; color: var(--muted); font: 600 13px var(--f-body); padding: 6px 12px; cursor: pointer; }
-.units button[aria-pressed="true"] { background: var(--court); color: var(--panel); }
+body.has-tabs { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+body.sheet-open { overflow: hidden; }
+.wrap { max-width: 560px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.tab, .app { display: flex; flex-direction: column; gap: 14px; }
+h1 { font: 700 34px/1 var(--f-display); text-transform: uppercase; letter-spacing: .01em; margin: 0; text-wrap: balance; }
+h2 { font: 700 13px/1.2 var(--f-body); text-transform: uppercase; letter-spacing: .09em; margin: 0; color: var(--muted); }
+p { margin: 0; }
+:focus-visible { outline: 3px solid var(--optic); outline-offset: 2px; }
+.small { font-size: 14px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 15px; }
+.err-text { color: var(--bad); }
+.mono { font-family: var(--f-mono); }
 
-.meter {
-  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px;
-  display: flex; flex-direction: column; gap: 14px; position: relative; overflow: hidden;
-}
-.meter::before { /* string-bed weave, faint */
-  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .5;
-  background-image:
-    repeating-linear-gradient(90deg, var(--court-soft) 0 1px, transparent 1px 18px),
-    repeating-linear-gradient(0deg, var(--court-soft) 0 1px, transparent 1px 18px);
-  -webkit-mask-image: linear-gradient(180deg, #000 0, transparent 70%);
-          mask-image: linear-gradient(180deg, #000 0, transparent 70%);
-}
-.meter > * { position: relative; }
-.racket-row { display: flex; gap: 10px; align-items: center; }
-.racket-row select { flex: 1; min-width: 0; }
-.readout { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
-.big { font: 700 clamp(64px, 20vw, 96px)/.9 var(--f-display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-.big .u { font-size: .32em; color: var(--muted); margin-left: 4px; letter-spacing: .04em; }
-.readout .hz { font: 500 15px var(--f-mono); color: var(--muted); padding-bottom: 10px; }
-.chip { display: inline-block; font: 600 12px var(--f-body); letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--court-soft); color: var(--court); }
-.chip.good { color: var(--good); } .chip.warn { color: var(--warn); } .chip.bad { color: var(--bad); }
-.status { font-size: 15px; color: var(--muted); min-height: 1.5em; }
-.status.err { color: var(--bad); }
-canvas#spec { width: 100%; height: 110px; display: block; border-top: 1px solid var(--line); }
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.actions .wide { grid-column: 1 / -1; }
+/* title rows */
+.titlebar { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; min-height: 44px; }
+.titlebar small { display: block; font-size: 13px; color: var(--muted); font-weight: 500; margin-bottom: 3px; }
+.tb-right { display: flex; align-items: center; gap: 8px; }
+.me { width: 36px; height: 36px; border-radius: 50%; border: 0; background: var(--court-soft); color: var(--court); font: 700 14px var(--f-body); cursor: pointer; display: grid; place-items: center; flex: 0 0 auto; }
+.backbtn { border: 0; background: none; color: var(--court); font: 600 16px var(--f-body); padding: 8px 4px 8px 0; cursor: pointer; min-height: 44px; }
+
+/* cards */
+.card { background: var(--panel); border-radius: 18px; padding: 14px 16px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; border: 0; color: var(--ink); text-align: left; font: inherit; }
+button.card { cursor: pointer; width: 100%; }
+.lbl { font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.sect { font: 700 12px var(--f-body); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 6px 4px -6px; }
+.sect-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.chip { display: inline-block; font: 700 11px var(--f-body); letter-spacing: .06em; text-transform: uppercase; padding: 3px 9px; border-radius: 999px; background: var(--court-soft); color: var(--court); white-space: nowrap; }
+.chip.good { background: var(--good-soft); color: var(--good); } .chip.warn { background: var(--warn-soft); color: var(--warn); } .chip.bad { background: var(--bad-soft); color: var(--bad); }
+.titlebar .sync-chip.good { display: none; }
+.wear { height: 7px; border-radius: 999px; background: var(--court-soft); overflow: hidden; }
+.wear > * { height: 100%; width: 0; border-radius: 999px; background: var(--good); }
+.wear.soon > * { background: var(--warn); } .wear.now > * { background: var(--bad); }
+.dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: 0 0 auto; }
+.dot.good { background: var(--good); } .dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); }
+
+/* buttons and fields */
 button.btn, label.btn, a.btn {
-  font: 600 16px var(--f-body); border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: center;
-  border: 1px solid var(--court); background: transparent; color: var(--court);
+  font: 600 16px var(--f-body); border-radius: 12px; padding: 11px 14px; cursor: pointer; text-align: center; min-height: 44px;
+  border: 1.5px solid var(--court); background: transparent; color: var(--court); display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none;
 }
 button.btn.primary { background: var(--court); color: var(--panel); }
 button.btn:disabled { opacity: .45; cursor: default; }
-button.btn.listening { background: var(--optic); border-color: var(--optic); color: #142233; }
+button.btn.wide { width: 100%; }
 label.btn { position: relative; }
 label.btn input { position: absolute; width: 1px; height: 1px; opacity: 0; }
 label.btn:focus-within { outline: 3px solid var(--optic); outline-offset: 2px; }
-:focus-visible { outline: 3px solid var(--optic); outline-offset: 2px; }
-.small { font-size: 14px; color: var(--muted); }
-
-section.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
-.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-@media (max-width: 380px) { .grid2, .actions { grid-template-columns: 1fr; } }
-.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.field label { font: 600 12px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
-input, select { font: 16px var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; width: 100%; }
-.row-btns { display: flex; gap: 10px; flex-wrap: wrap; }
-.row-btns .btn { padding: 8px 12px; font-size: 14px; }
 .danger { border-color: var(--bad) !important; color: var(--bad) !important; }
-
-canvas#trend { width: 100%; height: 120px; display: block; }
-ol.hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-ol.hist li { display: grid; grid-template-columns: 1fr auto auto 36px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-ol.hist .t { color: var(--muted); font-size: 14px; }
-ol.hist .k { font: 600 16px var(--f-mono); }
-ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
-ol.hist button, ol.plays button { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0; width: 44px; height: 44px; margin: -8px -8px -8px 0; }
-.empty { color: var(--muted); font-size: 15px; }
-details summary { cursor: pointer; font-weight: 600; }
-.title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.app { display: flex; flex-direction: column; gap: 18px; }
-.account-form { display: flex; flex-direction: column; gap: 12px; }
-.linkbtn { border: 0; background: none; padding: 0; color: var(--court); font: 600 15px var(--f-body); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
-.err-text { color: var(--bad); }
-details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
-.confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
-.hours { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.hours .num { font: 700 44px/1 var(--f-display); font-variant-numeric: tabular-nums; }
-.hours .num .u { font-size: .45em; color: var(--muted); margin-left: 3px; }
+.row-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.row-btns .btn { padding: 8px 14px; font-size: 15px; }
+.linkbtn { border: 0; background: none; padding: 6px 0; color: var(--court); font: 600 15px var(--f-body); cursor: pointer; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 360px) { .grid2 { grid-template-columns: 1fr; } }
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field label { font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+input, select { font: 16px var(--f-body); color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px; width: 100%; min-height: 42px; }
 .picks { display: flex; flex-wrap: wrap; gap: 8px; border: 0; margin: 0; padding: 0; min-width: 0; }
-.picks legend { font: 600 12px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0; margin-bottom: 6px; width: 100%; }
+.picks legend { font: 600 11.5px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); padding: 0; margin-bottom: 6px; width: 100%; }
 .picks label { position: relative; }
 .picks input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.picks span { display: inline-block; font: 600 15px var(--f-body); padding: 8px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); cursor: pointer; min-height: 38px; }
+.picks span { display: inline-flex; align-items: center; font: 600 15px var(--f-body); padding: 7px 13px; border-radius: 999px; border: 1.5px solid var(--line); color: var(--ink); cursor: pointer; min-height: 40px; }
 .picks input:checked + span { background: var(--court); border-color: var(--court); color: var(--panel); }
 .picks input:focus-visible + span { outline: 3px solid var(--optic); outline-offset: 2px; }
-.log-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: end; }
-ol.plays { list-style: none; margin: 0; padding: 0; }
-ol.plays li { display: grid; grid-template-columns: 1fr auto 36px; gap: 12px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-ol.plays .t { color: var(--muted); font-size: 14px; }
-ol.plays .k { font: 500 15px var(--f-mono); }
-ol.bookings li { grid-template-columns: 1fr auto 36px 36px; }
-ol.bookings .t b { color: var(--ink); font-weight: 600; }
-ol.bookings li.past { opacity: .7; }
-#courts details { margin-top: 12px; }
-a.btn { text-decoration: none; display: inline-flex; align-items: center; }
-.split { font-size: 14px; color: var(--muted); }
-.restring-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-.wear { height: 10px; border-radius: 999px; background: var(--court-soft); overflow: hidden; }
-.wear > div { height: 100%; width: 0; border-radius: 999px; background: var(--good); }
-.wear.soon > div { background: var(--warn); } .wear.now > div { background: var(--bad); }
-ul.factors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 14px; color: var(--muted); }
-ul.factors li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; }
-ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: right; }
-.toast { position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(528px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 10px 10px 10px 16px; font-size: 15px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
-.toast button { border: 0; background: transparent; color: var(--optic); font: 700 15px var(--f-body); padding: 10px 12px; min-height: 44px; cursor: pointer; text-transform: uppercase; letter-spacing: .05em; }
-.racket-bar { position: sticky; top: 0; z-index: 5; margin: 0 -4px; padding: calc(6px + env(safe-area-inset-top, 0px)) 4px 8px; background: var(--bg); }
-.racket-bar select { font-weight: 600; }
-.tab { display: flex; flex-direction: column; gap: 18px; }
-.tabbar { position: fixed; z-index: 8; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding: 4px max(8px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
-.tabbar button { border: 0; background: none; color: var(--muted); font: 600 12px var(--f-body); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; min-height: 50px; cursor: pointer; }
-.tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.tabbar button[aria-current="page"] { color: var(--court); }
-body.has-tabs { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
-body.has-tabs .toast { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); }
+details > summary { cursor: pointer; font-weight: 600; list-style: none; }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::after { content: "›"; display: inline-block; margin-left: 8px; color: var(--muted); transition: transform .15s; }
+details[open] > summary::after { transform: rotate(90deg); }
+details p { margin: 8px 0 0; max-width: 62ch; color: var(--muted); font-size: 15px; }
+
+/* Today */
+.hero { display: grid; grid-template-columns: 84px 1fr; gap: 14px; align-items: center; }
+.ring { width: 84px; height: 84px; position: relative; }
+.ring svg { width: 84px; height: 84px; transform: rotate(-90deg); display: block; }
+.ring circle { fill: none; stroke-width: 9; }
+.ring .track { stroke: var(--court-soft); }
+.ring .val { stroke: var(--good); stroke-linecap: round; transition: stroke-dasharray .4s; }
+.ring.warn .val { stroke: var(--warn); } .ring.bad .val { stroke: var(--bad); }
+.ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 700 24px var(--f-display); font-variant-numeric: tabular-nums; }
+.hero-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.hero-text .chip { align-self: flex-start; }
+.t1 { font-weight: 700; font-size: 18px; line-height: 1.15; }
+.t2 { font-size: 14px; color: var(--muted); line-height: 1.35; }
+.duo { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tile { gap: 5px; justify-content: flex-start; }
+.val-big { font: 700 30px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.val-big small { font-size: 15px; color: var(--muted); margin-left: 3px; font-weight: 600; }
+.t2.warn { color: var(--warn); font-weight: 600; } .t2.bad { color: var(--bad); font-weight: 600; } .t2.good { color: var(--good); font-weight: 600; }
+ul.mini { list-style: none; margin: -4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+ul.mini button { width: 100%; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 0; border-radius: 14px; padding: 10px 14px; box-shadow: var(--shadow); color: var(--ink); font: 15px var(--f-body); text-align: left; cursor: pointer; }
+ul.mini .n { font-weight: 600; } ul.mini .d { color: var(--muted); font-size: 14px; margin-left: auto; text-align: right; }
+.next { display: grid; grid-template-columns: 46px 1fr auto; gap: 12px; align-items: center; }
+.calbox { border-radius: 10px; background: var(--court-soft); color: var(--court); text-align: center; font: 700 20px/1 var(--f-display); padding: 6px 0 5px; }
+.calbox small { display: block; font: 700 10px var(--f-body); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 2px; }
+.chev { color: var(--muted); font-size: 22px; line-height: 1; }
+.quick { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.qb { border-radius: 16px; padding: 12px 14px; background: var(--court); color: var(--panel); font: 700 17px/1.15 var(--f-body); text-align: left; border: 0; cursor: pointer; min-height: 64px; }
+.qb small { display: block; font-weight: 500; font-size: 13px; opacity: .85; margin-top: 3px; }
+.qb.alt { background: var(--panel); color: var(--court); box-shadow: inset 0 0 0 1.5px var(--court); }
+.setup { border: 1.5px dashed var(--court); box-shadow: none; background: transparent; }
+
+/* lists */
+ol.plays, ol.hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+ol.plays li, ol.hist li { display: grid; grid-template-columns: 1fr auto 40px; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-variant-numeric: tabular-nums; min-height: 48px; }
+ol.plays li:first-child, ol.hist li:first-child { border-top: 0; }
+ol.hist li { grid-template-columns: 1fr auto auto 40px; }
+ol.plays .t, ol.hist .t { color: var(--ink); font-size: 15px; min-width: 0; }
+ol.plays .t small, ol.hist .t small { display: block; color: var(--muted); font-size: 13px; }
+ol.plays .t.small { font-size: 13.5px; color: var(--muted); }
+ol.plays .k, ol.hist .k { font: 600 15px var(--f-body); }
+ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
+ol.plays button, ol.hist button, ol.tl button.x { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0; width: 40px; height: 40px; }
+ol.bookings li { grid-template-columns: 1fr auto 40px 40px; }
+ol.bookings .t b { font-weight: 600; }
+ol.bookings li.past { opacity: .6; }
+ol.bookings svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; vertical-align: middle; }
+ul.factors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+ul.factors li { display: grid; grid-template-columns: 48px 1fr; gap: 8px; }
+ul.factors b { font: 600 14px var(--f-body); color: var(--ink); text-align: right; font-variant-numeric: tabular-nums; }
 ul.overview { list-style: none; margin: 0; padding: 0; }
-ul.overview button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: 16px var(--f-body); padding: 10px 0; cursor: pointer; }
+ul.overview button { width: 100%; display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: 16px var(--f-body); padding: 11px 0; cursor: pointer; }
 ul.overview li:first-child button { border-top: 0; }
 ul.overview .n { font-weight: 600; }
-ul.overview .d { grid-column: 1 / -1; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
-ul.overview button[aria-current="true"] .n { color: var(--court); }
+ul.overview .d { grid-column: 2 / 3; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+ul.overview .chev { grid-row: 1 / 3; grid-column: 3; }
+ul.overview .dot { grid-row: 1; }
+.list { padding-top: 4px; padding-bottom: 4px; }
+
+/* Measure */
+.racket-pick { align-self: center; position: relative; max-width: 100%; }
+.racket-pick select { width: auto; max-width: 100%; border-radius: 999px; background: var(--panel); border: 0; box-shadow: var(--shadow); font-weight: 600; padding: 8px 34px 8px 16px; -webkit-appearance: none; appearance: none; }
+.racket-pick::after { content: "▾"; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+#strung-line { text-align: center; }
+.meter { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.readout { text-align: center; }
+.big { font: 700 clamp(84px, 26vw, 112px)/.9 var(--f-display); font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.big .u { font-size: .28em; color: var(--muted); margin-left: 4px; letter-spacing: .04em; }
+.readout .sub { font-size: 14px; color: var(--muted); margin-top: 4px; min-height: 1.4em; }
+.readout .sub span { display: block; }
+canvas#spec { width: 100%; height: 86px; display: block; }
+.listen { align-self: center; width: 132px; height: 132px; border-radius: 50%; border: 0; background: var(--court); color: var(--panel); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; font: 700 18px/1.1 var(--f-body); box-shadow: 0 0 0 12px var(--court-soft); margin: 14px 0 10px; cursor: pointer; padding: 10px; }
+.listen small { font-weight: 500; font-size: 12.5px; opacity: .85; margin-top: 4px; }
+.listen.listening { background: var(--optic); color: #142233; animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 20px var(--court-soft); } }
+.status { font-size: 15px; color: var(--ink); text-align: center; min-height: 1.4em; }
+.status.err { color: var(--bad); }
+.tip { font-size: 14px; color: var(--muted); text-align: center; max-width: 36ch; align-self: center; }
+.measure-btns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.trend-card canvas { width: 100%; height: 74px; display: block; }
+canvas#trend2 { width: 100%; height: 130px; display: block; }
+
+/* Racket page */
+.rp-head { display: flex; flex-direction: column; gap: 4px; }
+.hours { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.hours .num { font: 700 40px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.hours .num .u { font-size: .45em; color: var(--muted); margin-left: 3px; }
+.split { font-size: 14px; color: var(--muted); }
+.acts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.acts button { background: var(--panel); border: 0; border-radius: 14px; box-shadow: var(--shadow); padding: 10px 4px; color: var(--ink); font: 600 13px/1.15 var(--f-body); cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 64px; }
+.acts svg, .tabbar svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.acts button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px var(--court); color: var(--court); }
+.segc { display: grid; grid-template-columns: repeat(3, 1fr); background: var(--line); border-radius: 12px; padding: 3px; }
+.segc button { border: 0; background: none; padding: 8px 0; border-radius: 9px; color: var(--muted); font: 600 14px var(--f-body); cursor: pointer; min-height: 38px; }
+.segc button[aria-selected="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+ol.tl { list-style: none; margin: 0; padding: 0; }
+ol.tl li { display: grid; grid-template-columns: 14px 1fr auto 40px; gap: 10px; align-items: center; padding: 7px 0; min-height: 48px; font-variant-numeric: tabular-nums; position: relative; }
+ol.tl li::before { content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); justify-self: center; }
+ol.tl li::after { content: ""; position: absolute; left: 6px; top: 0; bottom: 0; width: 2px; background: var(--line); z-index: -1; }
+ol.tl { position: relative; z-index: 0; }
+ol.tl li.play::before { background: var(--muted); }
+ol.tl li.reading::before { background: var(--court); }
+ol.tl li.strung::before { background: var(--good); box-shadow: 0 0 0 3px var(--good-soft); }
+ol.tl li.out::before { background: var(--warn); }
+ol.tl li.out.broke::before { background: var(--bad); }
+ol.tl .t { font-size: 15px; min-width: 0; }
+ol.tl .t small { display: block; color: var(--muted); font-size: 13px; }
+ol.tl .k { font-weight: 600; font-size: 15px; text-align: right; }
+.confirm { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; font-size: 15px; }
+.restring-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+form.stack, .stack { display: flex; flex-direction: column; gap: 12px; }
+
+/* Settings */
+.units { display: inline-flex; border: 1.5px solid var(--line); border-radius: 999px; overflow: hidden; align-self: flex-start; }
+.units button { border: 0; background: transparent; color: var(--muted); font: 600 15px var(--f-body); padding: 7px 18px; cursor: pointer; min-height: 38px; }
+.units button[aria-pressed="true"] { background: var(--court); color: var(--panel); }
+.pref-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.conn > details { border-top: 1px solid var(--line); padding: 12px 0; }
+.conn > details:first-of-type { border-top: 0; padding-top: 2px; }
+.conn summary { display: flex; justify-content: space-between; align-items: center; font-size: 16px; min-height: 32px; }
+.conn summary span small { display: block; font-weight: 400; font-size: 13.5px; color: var(--muted); }
+.conn details > div { margin-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.conn details p { margin: 0; }
+
+/* Courts */
+details.addform > summary { display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--court); color: var(--court); border-radius: 12px; padding: 8px 14px; font-size: 15px; min-height: 44px; }
+details.addform[open] > summary { margin-bottom: 12px; }
+
+/* sign in */
+.brand { display: flex; align-items: center; gap: 12px; }
+.brand img { width: 52px; height: 52px; border-radius: 12px; }
+.brand h1 { font-size: 38px; }
+.account-form { display: flex; flex-direction: column; gap: 12px; }
+
+/* bottom tabs, toast and the log sheet */
+.tabbar { position: fixed; z-index: 8; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding: 4px max(8px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+.tabbar button { border: 0; background: none; color: var(--muted); font: 600 12px var(--f-body); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; min-height: 50px; cursor: pointer; }
+.tabbar button[aria-current="page"] { color: var(--court); }
+.toast { position: fixed; z-index: 30; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(528px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--ink); color: var(--bg); border-radius: 14px; padding: 10px 10px 10px 16px; font-size: 15px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
+.toast button { border: 0; background: transparent; color: var(--optic); font: 700 15px var(--f-body); padding: 10px 12px; min-height: 44px; cursor: pointer; text-transform: uppercase; letter-spacing: .05em; }
+body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+.scrim { position: fixed; inset: 0; z-index: 20; background: var(--scrim); }
+.sheet { position: fixed; z-index: 21; left: 50%; transform: translateX(-50%); bottom: 0; width: min(560px, 100%); max-height: calc(100% - 40px - env(safe-area-inset-top, 0px)); overflow-y: auto; background: var(--panel); border-radius: 24px 24px 0 0; padding: 8px max(18px, env(safe-area-inset-right, 0px)) calc(20px + env(safe-area-inset-bottom, 0px)) max(18px, env(safe-area-inset-left, 0px)); display: flex; flex-direction: column; gap: 14px; box-shadow: 0 -8px 30px rgba(0,0,0,.2); }
+.grab { width: 40px; height: 5px; border-radius: 9px; background: var(--line); align-self: center; }
+.sheet-head { display: flex; justify-content: space-between; align-items: center; }
+.sheet-head h2 { font: 700 26px var(--f-display); text-transform: uppercase; color: var(--ink); letter-spacing: .01em; }
+.xbtn { border: 0; background: var(--bg); color: var(--muted); width: 36px; height: 36px; border-radius: 50%; font-size: 20px; cursor: pointer; }
+.sheet .note { font-size: 14px; color: var(--muted); }
+.sheet .btn.primary { font-size: 17px; padding: 14px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
 <div class="toast" id="toast" role="status" hidden><span id="toast-msg"></span><button type="button" id="toast-undo">Undo</button></div>
 <div class="wrap">
-  <header>
-    <div class="title-row"><h1>Stringbed Meter</h1><span class="chip" id="sync-chip" hidden></span></div>
-    <div class="units" role="group" aria-label="Units">
-      <button id="u-kg" type="button" aria-pressed="true">kg</button>
-      <button id="u-lb" type="button" aria-pressed="false">lb</button>
-    </div>
-  </header>
 
   <section class="card" id="account" hidden aria-labelledby="h-account">
+    <div class="brand"><img src="icons/icon-192.png" alt=""><h1>Tennis Hub</h1></div>
     <h2 id="h-account">Sign in</h2>
-    <p class="small" id="account-intro">Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.</p>
+    <p class="small" id="account-intro">Sign in to keep your rackets, sessions and courts and use them on any device. Every player's gear is their own.</p>
     <form id="account-form" class="account-form">
       <div class="field" id="f-name" hidden><label for="acct-name">Your name</label><input id="acct-name" type="text" autocomplete="name" maxlength="60"></div>
       <div class="field" id="f-email"><label for="acct-email">Email</label><input id="acct-email" type="email" autocomplete="email" required></div>
@@ -209,211 +307,209 @@ ul.overview button[aria-current="true"] .n { color: var(--court); }
   </section>
 
   <div id="app" class="app" hidden>
-  <div class="racket-bar" id="racket-bar">
-    <div class="racket-row">
-      <select id="racket" aria-label="Racket"></select>
+
+  <!-- ===== Today ===== -->
+  <div class="tab" id="tab-today" data-tab="today">
+    <div class="titlebar"><div><small id="td-date"></small><h1>Today</h1></div><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <div class="card setup" id="td-setup" hidden>
+      <span class="t1">Set up your racket</span>
+      <span class="t2">Add its name, string, tension and the day it was strung, and Today shows how much life is left in the strings.</span>
+      <div class="row-btns"><button class="btn primary" type="button" id="td-setup-go">Set up my racket</button></div>
     </div>
-  </div>
-  <div class="tab" id="tab-measure" data-tab="measure">
-  <div class="meter">
-    <div class="racket-row"><span id="sample-chip" class="chip" hidden>Sample tap</span></div>
-    <div class="readout">
-      <div class="big" id="big">--<span class="u" id="big-u">kg</span></div>
-      <div class="hz" id="hz">-- Hz</div>
+    <button class="card hero" type="button" id="td-hero" aria-label="Open racket">
+      <span class="ring" id="td-ring"><svg viewBox="0 0 84 84" aria-hidden="true"><circle class="track" cx="42" cy="42" r="36"/><circle class="val" cx="42" cy="42" r="36" pathLength="100" stroke-dasharray="0 100"/></svg><b id="td-pct">–</b></span>
+      <span class="hero-text"><span class="chip" id="td-chip"></span><span class="t1" id="td-name"></span><span class="t2" id="td-line"></span></span>
+    </button>
+    <ul class="mini" id="td-others"></ul>
+    <div class="duo">
+      <button class="card tile" type="button" id="td-shoes"><span class="lbl">Shoes</span><span class="val-big" id="td-sh-val"></span><span class="wear" id="td-sh-bar"><span style="display:block"></span></span><span class="t2" id="td-sh-line"></span></button>
+      <button class="card tile" type="button" id="td-tension"><span class="lbl">Tension</span><span class="val-big" id="td-tn-val"></span><span class="t2" id="td-tn-change"></span><span class="t2" id="td-tn-line"></span></button>
     </div>
-    <div class="small" id="bed-line" hidden></div>
-    <div class="small" id="strung-line" hidden></div>
-    <div class="status" id="status" aria-live="polite">Hold the racket by the handle with the phone's bottom edge (where the microphone is) 10–20 cm from the strings. Tap the centre of the strings firmly with the heel of your palm and lift off straight away.</div>
-    <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
-    <div class="actions">
-      <button class="btn primary" id="listen" type="button">Listen for taps</button>
-      <label class="btn" for="file">Upload a recording<input id="file" type="file" accept="audio/*,video/*"></label>
-      <button class="btn wide" id="save" type="button" disabled>Save this reading</button>
+    <button class="card" type="button" id="td-court">
+      <span class="lbl">Next court</span>
+      <span class="next"><span class="calbox" id="td-ct-box"></span><span><span class="t1" id="td-ct-title" style="font-size:16px;display:block"></span><span class="t2" id="td-ct-line" style="display:block"></span></span><span class="chev">›</span></span>
+    </button>
+    <div class="stack" style="gap:8px">
+      <span class="lbl" style="margin-left:4px">Log a session</span>
+      <div class="quick">
+        <button class="qb" type="button" id="td-repeat"><span id="td-repeat-main">Singles 1 h 30</span><small id="td-repeat-sub">same as last time</small></button>
+        <button class="qb alt" type="button" id="td-other">Something else<small>type, time, day</small></button>
+      </div>
     </div>
+    <section class="card" aria-labelledby="h-recent">
+      <div class="sect-head"><h2 id="h-recent">Recent sessions</h2><button class="linkbtn" id="plays-more" type="button">See all</button></div>
+      <ol class="plays" id="plays"></ol>
+    </section>
   </div>
 
-  <section class="card" aria-labelledby="h-hist">
-    <h2 id="h-hist">History</h2>
-    <canvas id="trend" aria-label="Tension over time"></canvas>
-    <ol class="hist" id="hist"></ol>
-  </section>
-  <section class="card" aria-labelledby="h-cal">
-    <h2 id="h-cal">Calibrate</h2>
-    <p class="small" id="cal-text">Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.</p>
-    <div class="grid2">
-      <div class="field"><label for="cal-val" id="cal-label">Strung at (kg)</label><input id="cal-val" type="number" step="0.5" inputmode="decimal"></div>
-      <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
-    </div>
-    <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
-  </section>
-  <section class="card">
-    <details>
+  <!-- ===== Measure ===== -->
+  <div class="tab" id="tab-measure" data-tab="measure" hidden>
+    <div class="titlebar"><h1>Measure</h1><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <div class="racket-pick"><select id="racket" aria-label="Racket"></select></div>
+    <div class="small" id="strung-line" hidden></div>
+    <section class="meter" aria-label="Tension meter">
+      <div class="readout">
+        <div class="big" id="big">–<span class="u" id="big-u">kg</span></div>
+        <div class="sub"><span id="bed-line"></span><span id="hz" class="mono" hidden></span></div>
+      </div>
+      <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
+      <button class="listen" id="listen" type="button"><span id="listen-label">Listen for taps</span><small id="listen-sub">then tap the strings</small></button>
+      <div class="status" id="status" aria-live="polite"></div>
+      <p class="tip">Hold the phone's bottom edge 10–20 cm from the strings. Tap the centre firmly with the heel of your palm, about once a second.</p>
+      <div class="measure-btns">
+        <button class="btn primary" id="save" type="button" hidden>Save this reading</button>
+        <label class="btn" for="file">Upload a recording<input id="file" type="file" accept="audio/*,video/*"></label>
+      </div>
+    </section>
+    <section class="card" id="cal-card" aria-labelledby="h-cal" hidden>
+      <div class="sect-head"><h2 id="h-cal">Calibrate the new strings</h2><button class="xbtn" type="button" id="cal-skip" aria-label="Not now">×</button></div>
+      <p class="small" id="cal-text">Tap the freshly strung racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.</p>
+      <div class="grid2">
+        <div class="field"><label for="cal-val" id="cal-label">Strung at (kg)</label><input id="cal-val" type="number" step="0.5" inputmode="decimal"></div>
+        <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
+      </div>
+    </section>
+    <button class="card trend-card" type="button" id="trend-card">
+      <span class="sect-head" style="width:100%"><span class="lbl" id="trend-lbl">Readings</span><span class="small" id="trend-count"></span></span>
+      <canvas id="trend" aria-label="Tension over time"></canvas>
+      <span class="small" id="trend-empty">No saved readings for this racket yet. Tap, then press Save.</span>
+    </button>
+    <details class="card">
       <summary>How it works</summary>
       <p>A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. Tension rises with the square of that pitch, the head area and the weight per metre of the string (its gauge and material). The app uses the drum-skin formula for an oval head, which Cross and Bower checked against a load cell inside a strung racket and found within a few percent.</p>
       <p>That gives the tension left in the strung racket, shown under the big number as "in the bed". It is 30–40% lower than the tension set on the stringing machine, even straight after stringing, because the strings relax and lose tension through the grommets. Apps like RacquetTune show this bed number. The big number turns it back into stringing-machine terms using that typical drop, so it can be compared with what you asked your stringer for. Calibrate right after a restring and the app learns your stringer's real drop. Either way the trend for one racket is reliable: use it to see when to restring.</p>
       <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm, a knuckle or the edge of another racket, and lift off at once: anything left on the strings stops the ring. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
       <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
     </details>
-  </section>
   </div>
-  <div class="tab" id="tab-play" data-tab="play" hidden>
-  <section class="card" aria-labelledby="h-play">
-    <h2 id="h-play">Play on these strings</h2>
-    <div class="hours"><div class="num" id="hours-num">0<span class="u">h</span></div><div class="small" id="hours-line"></div></div>
-    <div class="split" id="hours-split" hidden></div>
-    <fieldset class="picks" id="kind-picks">
-      <legend>Type of play</legend>
-    </fieldset>
-    <fieldset class="picks" id="dur-picks">
-      <legend>Time</legend>
-    </fieldset>
-    <div class="log-row">
-      <div class="field" id="f-dur-other" hidden><label for="dur-other">Hours</label><input id="dur-other" type="number" min="0.25" max="10" step="0.25" inputmode="decimal" placeholder="e.g. 2.5"></div>
-      <div class="field"><label for="play-date">Day</label><input id="play-date" type="date"></div>
-      <button class="btn primary" id="log-play" type="button">Log play</button>
-    </div>
-    <ol class="plays" id="plays"></ol>
-    <button class="linkbtn" id="plays-more" type="button" hidden>Show older sessions</button>
-  </section>
-  <section class="card" aria-labelledby="h-courts" id="courts" hidden>
-    <h2 id="h-courts">Court bookings</h2>
-    <p class="small" id="courts-line">Add the courts you book at the club. Each one goes in your calendar, and once it ends the time is logged on your racket.</p>
-    <ol class="plays bookings" id="bookings"></ol>
-    <details id="bk-add">
-      <summary>Add a booking</summary>
-      <div class="grid2" style="margin-top:10px">
-        <div class="field"><label for="bk-date">Day</label><input id="bk-date" type="date"></div>
-        <div class="field"><label for="bk-time">Start</label><input id="bk-time" type="time" step="900" value="18:00"></div>
-        <div class="field"><label for="bk-len">Length</label>
-          <select id="bk-len"><option value="60">1 hour</option><option value="90" selected>1½ hours</option><option value="120">2 hours</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="180">3 hours</option></select>
+
+  <!-- ===== Courts ===== -->
+  <div class="tab" id="tab-courts" data-tab="courts" hidden>
+    <div class="titlebar"><h1>Courts</h1><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <section class="card" aria-labelledby="h-courts" id="courts">
+      <h2 id="h-courts">Booked</h2>
+      <ol class="plays bookings" id="bookings"></ol>
+      <p class="empty" id="courts-line">No courts booked. Each booking goes in your court calendar, and once it ends the time is logged on your racket.</p>
+      <details id="bk-add" class="addform">
+        <summary>Add a booking</summary>
+        <div class="grid2">
+          <div class="field"><label for="bk-date">Day</label><input id="bk-date" type="date"></div>
+          <div class="field"><label for="bk-time">Start</label><input id="bk-time" type="time" step="900" value="18:00"></div>
+          <div class="field"><label for="bk-len">Length</label>
+            <select id="bk-len"><option value="60">1 h</option><option value="90" selected>1 h 30</option><option value="120">2 h</option><option value="30">30 min</option><option value="45">45 min</option><option value="180">3 h</option></select>
+          </div>
+          <div class="field"><label for="bk-kind">Type of play</label>
+            <select id="bk-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option><option value="ball_machine">Ball machine</option><option value="serves">Serves</option></select>
+          </div>
+          <div class="field"><label for="bk-court">Court</label><input id="bk-court" type="text" maxlength="40" placeholder="e.g. Court 3"></div>
+          <div class="field"><label for="bk-racket">Racket</label><select id="bk-racket"></select></div>
         </div>
-        <div class="field"><label for="bk-kind">Type of play</label>
-          <select id="bk-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option><option value="ball_machine">Ball machine</option><option value="serves">Serves</option></select>
-        </div>
-        <div class="field"><label for="bk-court">Court</label><input id="bk-court" type="text" maxlength="40" placeholder="e.g. Court 3"></div>
-        <div class="field"><label for="bk-racket">Racket</label><select id="bk-racket"></select></div>
-      </div>
-      <div class="row-btns" style="margin-top:10px"><button class="btn primary" id="bk-save" type="button">Save booking</button></div>
-      <p class="small err-text" id="bk-err" hidden></p>
-    </details>
-    <details id="plan-sub">
-      <summary>Regular times (claim the same court every week)</summary>
-      <p>Save the times you play every week. Your court calendar gets a "Book now" alert the minute GameTime opens each one, linking to the booking form, and the GameTime button shows the best open court for it in one tap. You always finish the booking on GameTime.</p>
+        <div class="row-btns" style="margin-top:12px"><button class="btn primary" id="bk-save" type="button">Save booking</button></div>
+        <p class="small err-text" id="bk-err" hidden></p>
+      </details>
+    </section>
+    <section class="card" aria-labelledby="h-plans">
+      <h2 id="h-plans">Every week</h2>
+      <p class="small">The times you play every week. Your court calendar gets a "Book now" alert the minute GameTime opens each one.</p>
       <ol class="plays" id="plans"></ol>
-      <div class="grid2" style="margin-top:10px">
-        <div class="field"><label for="pl-dow">Day</label>
-          <select id="pl-dow"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select>
+      <details id="plan-sub" class="addform">
+        <summary>Add a regular time</summary>
+        <div class="grid2">
+          <div class="field"><label for="pl-dow">Day</label>
+            <select id="pl-dow"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select>
+          </div>
+          <div class="field"><label for="pl-time">Start</label><input id="pl-time" type="time" step="900" value="18:00"></div>
+          <div class="field"><label for="pl-len">Length</label>
+            <select id="pl-len"><option value="60">1 h</option><option value="75" selected>1 h 15</option><option value="90">1 h 30</option><option value="120">2 h</option></select>
+          </div>
+          <div class="field"><label for="pl-area">Courts</label>
+            <select id="pl-area"><option value="any">Any</option><option value="indoor">Indoor (14–19)</option><option value="outdoor">Outdoor (1–8)</option><option value="clay">Pro &amp; clay (9–13)</option></select>
+          </div>
+          <div class="field"><label for="pl-court">Favourite court</label><input id="pl-court" type="text" maxlength="40" placeholder="e.g. Court 15"></div>
+          <div class="field"><label for="pl-kind">Type of play</label>
+            <select id="pl-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option></select>
+          </div>
         </div>
-        <div class="field"><label for="pl-time">Start</label><input id="pl-time" type="time" step="900" value="18:00"></div>
-        <div class="field"><label for="pl-len">Length</label>
-          <select id="pl-len"><option value="60">1 hour</option><option value="75" selected>1¼ hours</option><option value="90">1½ hours</option><option value="120">2 hours</option></select>
+        <div class="field" style="margin-top:10px"><label for="pl-note">With (optional)</label><input id="pl-note" type="text" maxlength="120" placeholder="e.g. Marc"></div>
+        <div class="row-btns" style="margin-top:12px"><button class="btn primary" id="pl-save" type="button">Save regular time</button></div>
+      </details>
+      <details>
+        <summary class="small">When GameTime opens booking</summary>
+        <p id="win-line"></p>
+        <div class="grid2" style="margin-top:10px">
+          <div class="field"><label for="win-days">Days ahead</label><input id="win-days" type="number" min="1" max="30" step="1"></div>
+          <div class="field"><label for="win-time">At</label><input id="win-time" type="time" step="900"></div>
         </div>
-        <div class="field"><label for="pl-area">Courts</label>
-          <select id="pl-area"><option value="any">Any</option><option value="indoor">Indoor (14–19)</option><option value="outdoor">Outdoor (1–8)</option><option value="clay">Pro &amp; clay (9–13)</option></select>
-        </div>
-        <div class="field"><label for="pl-court">Favourite court</label><input id="pl-court" type="text" maxlength="40" placeholder="e.g. Court 15"></div>
-        <div class="field"><label for="pl-kind">Type of play</label>
-          <select id="pl-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option></select>
-        </div>
-      </div>
-      <div class="field" style="margin-top:6px"><label for="pl-note">With (optional)</label><input id="pl-note" type="text" maxlength="120" placeholder="e.g. Marc"></div>
-      <div class="row-btns" style="margin-top:10px"><button class="btn primary" id="pl-save" type="button">Save regular time</button></div>
-      <p class="small" id="win-line" style="margin-top:12px"></p>
-      <div class="grid2">
-        <div class="field"><label for="win-days">Booking opens (days ahead)</label><input id="win-days" type="number" min="1" max="30" step="1"></div>
-        <div class="field"><label for="win-time">at</label><input id="win-time" type="time" step="900"></div>
-      </div>
+      </details>
       <p class="small err-text" id="pl-err" hidden></p>
-    </details>
-    <details id="cal-sub">
-      <summary>Show bookings in my calendar</summary>
-      <p>Subscribe once and every booking, added here or from a confirmation email through the chat assistant, shows up in Apple, Google or Outlook Calendar with a reminder an hour before. Calendars check for changes about every hour (Google can take up to a day), so use the calendar button on a booking to add it right away.</p>
-      <div class="row-btns" style="margin-top:10px"><button class="btn" id="cal-new" type="button">Make my calendar link</button></div>
-      <div class="field" id="cal-show" hidden style="margin-top:10px">
-        <label for="cal-url">Your calendar link (private, shown once)</label>
-        <input id="cal-url" type="text" readonly>
-        <div class="row-btns" style="margin-top:6px">
-          <a class="btn" id="cal-apple" href="#">Add to Apple Calendar</a>
-          <a class="btn" id="cal-google" href="#" target="_blank" rel="noopener">Add to Google Calendar</a>
-          <button class="btn" id="cal-copy" type="button">Copy link</button>
-        </div>
-      </div>
-      <p class="small err-text" id="cal-err" hidden></p>
-    </details>
-    <details id="gt-sub">
-      <summary>GameTime button: open courts and your bookings</summary>
-      <p>A bookmark you tap while you're on the Seattle Tennis Club GameTime site (stc.gametime.net), signed in. It opens a clean view of open courts by day; tap a court to go straight to GameTime's booking form for it. It also copies your own GameTime bookings here and into your court calendar, and removes ones you cancelled. It also has tabs for lesson time the pros are holding, clinics and events, the court waitlist and the partner list. Tap the same bookmark on seattletennisclub.org (signed in) to see dinner times after the days you play. It only reads; you always finish a booking or reservation on the club's own pages.</p>
-      <div class="row-btns" style="margin-top:10px"><button class="btn" id="gt-new" type="button">Make my GameTime button</button></div>
-      <div id="gt-show" hidden style="margin-top:10px">
-        <p><b>On a computer:</b> drag this to your bookmarks bar: <a class="btn" id="gt-link" href="#">🎾 STC courts</a></p>
-        <p><b>On iPhone:</b> tap Copy, then in Safari bookmark any page (Share, Add Bookmark) and name it "STC courts". Open Bookmarks, tap Edit, open that bookmark and paste over its address. On stc.gametime.net, type "STC courts" in the address bar and tap the bookmark.</p>
-        <div class="row-btns" style="margin-top:6px"><button class="btn" id="gt-copy" type="button">Copy button code</button></div>
-        <p class="small">The button holds a private key that can only add court bookings to your account. Make a new one to turn the old one off.</p>
-      </div>
-      <p class="small err-text" id="gt-err" hidden></p>
-    </details>
-  </section>
+    </section>
+    <p class="small" style="padding:0 4px">The GameTime button and your court calendar link are in <button class="linkbtn" type="button" data-go="settings" data-open="conn-cal">Settings</button>.</p>
   </div>
+
+  <!-- ===== Gear ===== -->
+  <div class="tab" id="tab-gear" data-tab="gear" hidden>
+    <div class="titlebar"><h1>Gear</h1><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <div class="sect">Rackets</div>
+    <section class="card list" id="overview-card" aria-label="Rackets"><ul class="overview" id="ov-list"></ul></section>
+    <div class="row-btns"><button class="btn" id="add" type="button">Add a racket</button></div>
+    <div class="sect">Shoes</div>
+    <section class="card" aria-labelledby="h-shoes" id="shoes-card">
+      <div class="restring-head"><h2 id="h-shoes">Pair in use</h2><span class="chip" id="sh-chip" hidden></span></div>
+      <div id="sh-now" hidden class="stack" style="gap:8px">
+        <div class="hours"><div class="num" id="sh-hours">0<span class="u">h</span></div><div class="small" id="sh-line"></div></div>
+        <div class="wear" id="sh-bar" role="meter" aria-label="Shoe life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+        <details>
+          <summary class="small">Change expected life</summary>
+          <div class="field" style="margin-top:8px;max-width:180px"><label for="sh-life">Expected life (h)</label><input id="sh-life" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
+        </details>
+      </div>
+      <p class="empty" id="sh-empty">Add the pair you play in. Every session you log, on any racket, counts toward it, and you'll see when the outsoles are due.</p>
+      <ol class="plays" id="sh-list"></ol>
+      <div class="row-btns"><button class="btn" id="sh-new" type="button">New pair</button></div>
+      <form id="sh-form" class="stack" hidden>
+        <p class="small" id="sh-form-note">The pair you wear now is retired on the day the new one goes into use.</p>
+        <div class="grid2">
+          <div class="field"><label for="sh-name">Shoes</label><input id="sh-name" type="text" maxlength="60" placeholder="e.g. NB 996v6 2E" required></div>
+          <div class="field"><label for="sh-from">In use from</label><input id="sh-from" type="date" required></div>
+          <div class="field"><label for="sh-newlife">Expected life (h)</label><input id="sh-newlife" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
+        </div>
+        <p class="small err-text" id="sh-err" role="alert" hidden></p>
+        <div class="row-btns"><button class="btn primary" type="submit">Save pair</button><button class="btn" id="sh-cancel" type="button">Cancel</button></div>
+      </form>
+    </section>
+    <div class="sect">Strings</div>
+    <section class="card" aria-labelledby="h-bystring">
+      <h2 id="h-bystring">How long each string lasts you</h2>
+      <div id="by-string" hidden><ul class="factors" id="by-string-list"></ul></div>
+      <p class="empty" id="by-string-empty">Once you record a restring, this compares every string you've used: average hours and how often it broke.</p>
+    </section>
+  </div>
+
+  <!-- ===== One racket ===== -->
   <div class="tab" id="tab-racket" data-tab="racket" hidden>
-  <section class="card" aria-labelledby="h-all" id="overview-card">
-    <h2 id="h-all">All your gear</h2>
-    <ul class="overview" id="ov-list"></ul>
-  </section>
-  <section class="card" aria-labelledby="h-restring" id="restring">
-    <div class="restring-head"><h2 id="h-restring">Restring</h2><span class="chip" id="rs-chip"></span></div>
-    <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
-    <div id="rs-line"></div>
-    <div class="row-btns">
-      <button class="btn" id="rs-broke" type="button">Strings broke</button>
-      <button class="btn" id="rs-quick" type="button">Record a restring</button>
+    <div class="titlebar"><button class="backbtn" type="button" data-go="gear">‹ Gear</button><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <div class="rp-head"><h1 id="rp-name"></h1><p class="small" id="rp-specs"></p></div>
+    <section class="card" aria-labelledby="h-restring" id="restring">
+      <div class="restring-head"><h2 id="h-restring">Strings</h2><span class="chip" id="rs-chip"></span></div>
+      <div class="hours"><div class="num" id="hours-num">0<span class="u">h</span></div><div class="small" id="hours-line"></div></div>
+      <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+      <div id="rs-line"></div>
+      <div class="split" id="hours-split" hidden></div>
+      <details>
+        <summary class="small">What this is based on</summary>
+        <ul class="factors" id="rs-factors" style="margin-top:8px"></ul>
+        <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set your level and style in Settings, and save a reading right after each restring, for the best estimate. Each time you press Strings broke, the break estimate moves toward how long strings really last for you.</p>
+      </details>
+    </section>
+    <div class="acts">
+      <button type="button" id="rp-measure"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Measure</button>
+      <button type="button" id="rs-new"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5"/></svg>Restrung</button>
+      <button type="button" id="rs-broke"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h6l2-3 2 6 2-3h4"/></svg>Strings broke</button>
+      <button type="button" id="rp-edit" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Edit</button>
     </div>
-    <details>
-      <summary class="small">What this is based on</summary>
-      <ul class="factors" id="rs-factors"></ul>
-      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate. Each time you press Strings broke, the break estimate moves toward how long strings really last for you.</p>
-    </details>
-  </section>
-  <section class="card" aria-labelledby="h-jobs" id="jobs-card">
-    <h2 id="h-jobs">String history</h2>
-    <ol class="plays" id="jobs"></ol>
-    <p class="empty" id="jobs-empty">Each time you restring, press Record a restring below. The old strings are kept here with the hours they lasted and why they came out, so you can see which string lasts longest for you.</p>
-    <div id="by-string" hidden>
-      <h2 style="margin-top:6px">By string</h2>
-      <ul class="factors" id="by-string-list"></ul>
-    </div>
-  </section>
-  <section class="card" aria-labelledby="h-set">
-    <h2 id="h-set">Racket</h2>
-    <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" maxlength="40"></div>
-    <div class="grid2">
-      <div class="field"><label for="r-head">Head size (sq in)</label><input id="r-head" type="number" min="85" max="125" step="1" inputmode="numeric"></div>
-      <div class="field"><label for="r-gauge">String gauge (mm)</label><input id="r-gauge" type="number" min="1.05" max="1.45" step="0.01" inputmode="decimal"></div>
-      <div class="field"><label for="r-mat">String</label>
-        <select id="r-mat">
-          <option value="poly">Polyester</option>
-          <option value="multi">Multifilament / nylon</option>
-          <option value="syngut">Synthetic gut</option>
-          <option value="gut">Natural gut</option>
-          <option value="hybrid">Hybrid (gut or multi + poly)</option>
-          <option value="kevlar">Aramid (Kevlar)</option>
-        </select>
-      </div>
-      <div class="field"><label for="r-pattern">Pattern</label>
-        <select id="r-pattern">
-          <option value="16x19">16 × 19</option>
-          <option value="18x20">18 × 20</option>
-          <option value="16x18">16 × 18</option>
-          <option value="18x19">18 × 19</option>
-        </select>
-      </div>
-      <div class="field"><label for="r-strung" id="r-strung-label">Strung at (kg)</label><input id="r-strung" type="number" min="10" max="80" step="0.5" inputmode="decimal"></div>
-      <div class="field"><label for="r-strungon">Strung on</label><input id="r-strungon" type="date"></div>
-      <div class="field"><label for="r-string">String name</label><input id="r-string" type="text" maxlength="40" placeholder="e.g. ALU Power"></div>
-      <div class="field"><label for="r-weight">Weight (g)</label><input id="r-weight" type="number" min="200" max="400" step="1" inputmode="numeric"></div>
-    </div>
-    <div class="row-btns"><button class="btn primary" id="rs-new" type="button">Record a restring</button></div>
-    <form id="rs-form" class="account-form" hidden>
-      <p class="small">The strings coming out go to String history. Fields start with the current strings; change what's different.</p>
+    <form id="rs-form" class="card" hidden>
+      <h2>Record a restring</h2>
+      <p class="small">The strings coming out go to the history. Fields start with the current strings; change what's different.</p>
       <fieldset class="picks" id="rs-why">
         <legend>Old strings came out because</legend>
         <label><input type="radio" name="rs-why" value="broke"><span>They broke</span></label>
@@ -439,130 +535,221 @@ ul.overview button[aria-current="true"] .n { color: var(--court); }
       <p class="small err-text" id="rs-err" role="alert" hidden></p>
       <div class="row-btns"><button class="btn primary" type="submit">Save restring</button><button class="btn" id="rs-cancel" type="button">Cancel</button></div>
     </form>
-    <div class="row-btns">
-      <button class="btn" id="add" type="button">Add a racket</button>
-      <button class="btn danger" id="del" type="button">Delete this racket</button>
-    </div>
-    <div class="confirm" id="del-confirm" hidden>
-      <span>Delete <b id="del-name"></b> and its history?</span>
-      <button class="btn danger" id="del-yes" type="button">Delete</button>
-      <button class="btn" id="del-no" type="button">Keep</button>
-    </div>
-  </section>
-  <section class="card" aria-labelledby="h-shoes" id="shoes-card">
-    <div class="restring-head"><h2 id="h-shoes">Shoes</h2><span class="chip" id="sh-chip" hidden></span></div>
-    <div id="sh-now" hidden>
-      <div class="hours"><div class="num" id="sh-hours">0<span class="u">h</span></div><div class="small" id="sh-line"></div></div>
-      <div class="wear" id="sh-bar" role="meter" aria-label="Shoe life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
-      <div class="grid2" style="margin-top:10px">
-        <div class="field"><label for="sh-life">Expected life (h)</label><input id="sh-life" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
-      </div>
-    </div>
-    <p class="empty" id="sh-empty">Add the pair you play in. Every session you log, on any racket, counts toward it, and you'll see when the outsoles are due.</p>
-    <ol class="plays" id="sh-list"></ol>
-    <div class="row-btns"><button class="btn" id="sh-new" type="button">Add a new pair</button></div>
-    <form id="sh-form" class="account-form" hidden>
-      <p class="small" id="sh-form-note">The pair you wear now is retired on the day the new one goes into use.</p>
+    <section class="card" id="specs" aria-labelledby="h-set" hidden>
+      <h2 id="h-set">Edit racket</h2>
+      <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" maxlength="40"></div>
       <div class="grid2">
-        <div class="field"><label for="sh-name">Shoes</label><input id="sh-name" type="text" maxlength="60" placeholder="e.g. NB 996v6 2E" required></div>
-        <div class="field"><label for="sh-from">In use from</label><input id="sh-from" type="date" required></div>
-        <div class="field"><label for="sh-newlife">Expected life (h)</label><input id="sh-newlife" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
+        <div class="field"><label for="r-string">String name</label><input id="r-string" type="text" maxlength="40" placeholder="e.g. ALU Power"></div>
+        <div class="field"><label for="r-mat">String type</label>
+          <select id="r-mat">
+            <option value="poly">Polyester</option>
+            <option value="multi">Multifilament / nylon</option>
+            <option value="syngut">Synthetic gut</option>
+            <option value="gut">Natural gut</option>
+            <option value="hybrid">Hybrid (gut or multi + poly)</option>
+            <option value="kevlar">Aramid (Kevlar)</option>
+          </select>
+        </div>
+        <div class="field"><label for="r-gauge">Gauge (mm)</label><input id="r-gauge" type="number" min="1.05" max="1.45" step="0.01" inputmode="decimal"></div>
+        <div class="field"><label for="r-strung" id="r-strung-label">Strung at (kg)</label><input id="r-strung" type="number" min="10" max="80" step="0.5" inputmode="decimal"></div>
+        <div class="field"><label for="r-strungon">Strung on</label><input id="r-strungon" type="date"></div>
+        <div class="field"><label for="r-pattern">Pattern</label>
+          <select id="r-pattern">
+            <option value="16x19">16 × 19</option>
+            <option value="18x20">18 × 20</option>
+            <option value="16x18">16 × 18</option>
+            <option value="18x19">18 × 19</option>
+          </select>
+        </div>
+        <div class="field"><label for="r-head">Head size (sq in)</label><input id="r-head" type="number" min="85" max="125" step="1" inputmode="numeric"></div>
+        <div class="field"><label for="r-weight">Weight (g)</label><input id="r-weight" type="number" min="200" max="400" step="1" inputmode="numeric"></div>
       </div>
-      <p class="small err-text" id="sh-err" role="alert" hidden></p>
-      <div class="row-btns"><button class="btn primary" type="submit">Save pair</button><button class="btn" id="sh-cancel" type="button">Cancel</button></div>
-    </form>
-  </section>
+      <p class="small" id="cal-status"></p>
+      <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
+      <div class="row-btns" style="justify-content:space-between">
+        <button class="btn primary" id="rp-done" type="button">Done</button>
+        <button class="btn danger" id="del" type="button">Delete racket</button>
+      </div>
+      <div class="confirm" id="del-confirm" hidden>
+        <span>Delete <b id="del-name"></b> and its history?</span>
+        <button class="btn danger" id="del-yes" type="button">Delete</button>
+        <button class="btn" id="del-no" type="button">Keep</button>
+      </div>
+    </section>
+    <div class="segc" role="tablist" aria-label="Racket history">
+      <button type="button" role="tab" data-seg="timeline" aria-selected="true">Timeline</button>
+      <button type="button" role="tab" data-seg="tension" aria-selected="false">Tension</button>
+      <button type="button" role="tab" data-seg="strings" aria-selected="false">Strings</button>
+    </div>
+    <section class="card" data-panel="timeline" aria-label="Timeline">
+      <ol class="tl" id="timeline"></ol>
+      <p class="empty" id="tl-empty" hidden>Sessions, readings and restrings for this racket show up here.</p>
+      <button class="linkbtn" id="tl-more" type="button" hidden>Show older</button>
+    </section>
+    <section class="card" data-panel="tension" aria-label="Tension readings" hidden>
+      <canvas id="trend2" aria-label="Tension over time"></canvas>
+      <ol class="hist" id="hist"></ol>
+      <div class="row-btns"><button class="btn" id="rp-cal" type="button">Calibrate after a restring</button></div>
+    </section>
+    <section class="card" data-panel="strings" aria-label="String history" hidden>
+      <ol class="plays" id="jobs"></ol>
+      <p class="empty" id="jobs-empty">Each time you restring, press Restrung above. The old strings are kept here with the hours they lasted and why they came out.</p>
+    </section>
   </div>
-  <div class="tab" id="tab-account" data-tab="account" hidden>
-  <section class="card" aria-labelledby="h-game">
-    <h2 id="h-game">Your game</h2>
-    <p class="small">Your level and style are saved with your account. Heavy spin wears through strings much faster than flat hitting, so this helps you read your hours.</p>
-    <div class="grid2">
-      <div class="field"><label for="p-level">Level (NTRP)</label>
-        <select id="p-level">
-          <option value="">Not set</option>
-          <option value="2.0">2.0 (beginner)</option>
-          <option value="2.5">2.5</option>
-          <option value="3.0">3.0</option>
-          <option value="3.5">3.5</option>
-          <option value="4.0">4.0</option>
-          <option value="4.5">4.5</option>
-          <option value="5.0">5.0</option>
-          <option value="5.5">5.5</option>
-          <option value="6.0">6.0+ (college or pro)</option>
-          <option value="7.0">7.0 (touring pro)</option>
-        </select>
+
+  <!-- ===== Settings ===== -->
+  <div class="tab" id="tab-settings" data-tab="settings" hidden>
+    <div class="titlebar"><button class="backbtn" type="button" id="set-back">‹ Back</button></div>
+    <h1>Settings</h1>
+    <section class="card" aria-labelledby="h-acct">
+      <div class="restring-head"><h2 id="h-acct">Account</h2><span class="chip sync-chip" hidden></span></div>
+      <p id="who"></p>
+      <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
+      <div class="row-btns"><button class="btn" id="signout" type="button" hidden>Sign out</button></div>
+    </section>
+    <section class="card" aria-labelledby="h-prefs">
+      <h2 id="h-prefs">Preferences</h2>
+      <div class="pref-row"><span>Units</span>
+        <div class="units" role="group" aria-label="Units">
+          <button id="u-kg" type="button" aria-pressed="true">kg</button>
+          <button id="u-lb" type="button" aria-pressed="false">lb</button>
+        </div>
       </div>
-      <div class="field"><label for="p-style">Style of play</label>
-        <select id="p-style">
-          <option value="">Not set</option>
-          <option value="heavy_spin">Heavy topspin</option>
-          <option value="moderate_spin">Moderate topspin</option>
-          <option value="flat">Flat hitter</option>
-          <option value="all_court">All-court / slice</option>
-          <option value="serve_volley">Serve and volley</option>
-          <option value="counter">Counterpuncher</option>
-        </select>
+      <p class="small">Your level and style change the restring estimate: heavy spin wears strings much faster than flat hitting.</p>
+      <div class="grid2">
+        <div class="field"><label for="p-level">Level (NTRP)</label>
+          <select id="p-level">
+            <option value="">Not set</option>
+            <option value="2.0">2.0 (beginner)</option>
+            <option value="2.5">2.5</option>
+            <option value="3.0">3.0</option>
+            <option value="3.5">3.5</option>
+            <option value="4.0">4.0</option>
+            <option value="4.5">4.5</option>
+            <option value="5.0">5.0</option>
+            <option value="5.5">5.5</option>
+            <option value="6.0">6.0+ (college or pro)</option>
+            <option value="7.0">7.0 (touring pro)</option>
+          </select>
+        </div>
+        <div class="field"><label for="p-style">Style of play</label>
+          <select id="p-style">
+            <option value="">Not set</option>
+            <option value="heavy_spin">Heavy topspin</option>
+            <option value="moderate_spin">Moderate topspin</option>
+            <option value="flat">Flat hitter</option>
+            <option value="all_court">All-court / slice</option>
+            <option value="serve_volley">Serve and volley</option>
+            <option value="counter">Counterpuncher</option>
+          </select>
+        </div>
       </div>
-    </div>
-  </section>
-  <section class="card" aria-labelledby="h-rem">
-    <h2 id="h-rem">Restring reminders</h2>
-    <p class="small" id="push-text">Get a notification on this phone when a racket's strings are due: once at Restring soon and once at Restring now. The check runs every morning.</p>
-    <div class="row-btns">
-      <button class="btn" id="push-on" type="button">Turn on reminders</button>
-      <button class="btn" id="push-test" type="button" hidden>Send a test</button>
-      <button class="btn" id="push-off" type="button" hidden>Turn off on this phone</button>
-    </div>
-    <p class="small err-text" id="push-err" hidden></p>
-  </section>
-  <section class="card" aria-labelledby="h-qlog">
-    <h2 id="h-qlog">Quick log</h2>
-    <p class="small">Log a session in one tap after a match, without opening the app: a private link for an iPhone Shortcut or a Home Screen button. It can only add (and undo) play sessions.</p>
-    <div class="row-btns"><button class="btn" id="ql-new" type="button">Make my quick-log link</button></div>
-    <div class="field" id="ql-show" hidden>
-      <label for="ql-url">Your quick-log link (shown once)</label>
-      <input id="ql-url" type="text" readonly>
-      <div class="row-btns"><button class="btn" id="ql-copy" type="button">Copy link</button><a class="btn" id="ql-open" target="_blank" rel="noopener" style="text-decoration:none">Open the page</a></div>
-    </div>
-    <p class="small err-text" id="ql-err" hidden></p>
-    <details>
-      <summary class="small">Set up the one-tap Shortcut</summary>
-      <p>In the Shortcuts app, tap +, then add <b>Get Contents of URL</b>. Paste your quick-log link as the URL, tap the arrow, set Method to <b>POST</b> and Request Body to <b>JSON</b>, and add two fields: <b>kind</b> (Text) = <code>singles</code> and <b>minutes</b> (Number) = <code>90</code>. Then add <b>Show Result</b>. Name it "Log singles" and add it to your Home Screen or say "Hey Siri, log singles".</p>
-      <p>Other kinds: doubles, hitting, drills, ball_machine, serves. Add a <b>racket</b> field (for example <code>v8</code>) to pick a racket; without it the one you used last is chosen. For a choice each time, use <b>Choose from Menu</b> with one Get Contents of URL per option.</p>
-      <p>Simpler: open the page from the link above in Safari, tap Share, then <b>Add to Home Screen</b>. It opens to big buttons for type and time.</p>
-    </details>
-  </section>
-  <section class="card" aria-labelledby="h-chat">
-    <h2 id="h-chat">Chat assistant</h2>
-    <p class="small">Log play by chatting, for example "I played an hour of singles". Make a private link, then in Claude open Settings, then Connectors, then Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your rackets, so keep it to yourself.</p>
-    <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
-    <div class="field" id="tok-show" hidden>
-      <label for="tok-url">Your connector link (shown once)</label>
-      <input id="tok-url" type="text" readonly>
-      <div class="row-btns"><button class="btn" id="tok-copy" type="button">Copy link</button></div>
-    </div>
-    <p class="small err-text" id="tok-err" hidden></p>
-    <ol class="plays" id="tok-list"></ol>
-  </section>
-  <section class="card" aria-labelledby="h-acct">
-    <h2 id="h-acct">Account and backup</h2>
-    <p class="small" id="who"></p>
-    <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
-    <div class="row-btns">
-      <button class="btn" id="signout" type="button" hidden>Sign out</button>
-      <button class="btn" id="export" type="button">Back up to a file</button>
-      <label class="btn" for="import">Restore from a file<input id="import" type="file" accept="application/json,.json"></label>
-    </div>
-  </section>
+    </section>
+    <section class="card" aria-labelledby="h-rem">
+      <h2 id="h-rem">Reminders</h2>
+      <p class="small" id="push-text">Get a notification on this phone when strings or shoes are due. The check runs every morning.</p>
+      <div class="row-btns">
+        <button class="btn" id="push-on" type="button">Turn on reminders</button>
+        <button class="btn" id="push-test" type="button" hidden>Send a test</button>
+        <button class="btn" id="push-off" type="button" hidden>Turn off on this phone</button>
+      </div>
+      <p class="small err-text" id="push-err" hidden></p>
+    </section>
+    <section class="card conn" aria-labelledby="h-conn">
+      <h2 id="h-conn">Connections</h2>
+      <details id="conn-cal">
+        <summary><span>Court calendar<small>Bookings in Apple, Google or Outlook Calendar</small></span></summary>
+        <div>
+          <p class="small">Subscribe once and every booking shows up in your calendar with a reminder an hour before. Calendars check for changes about every hour (Google can take up to a day).</p>
+          <div class="row-btns"><button class="btn" id="cal-new" type="button">Make my calendar link</button></div>
+          <div class="field" id="cal-show" hidden>
+            <label for="cal-url">Your calendar link (private, shown once)</label>
+            <input id="cal-url" type="text" readonly>
+            <div class="row-btns" style="margin-top:6px">
+              <a class="btn" id="cal-apple" href="#">Add to Apple Calendar</a>
+              <a class="btn" id="cal-google" href="#" target="_blank" rel="noopener">Add to Google Calendar</a>
+              <button class="btn" id="cal-copy" type="button">Copy link</button>
+            </div>
+          </div>
+          <p class="small err-text" id="cal-err" hidden></p>
+        </div>
+      </details>
+      <details id="gt-sub">
+        <summary><span>GameTime button<small>Open courts and your bookings on stc.gametime.net</small></span></summary>
+        <div>
+          <p class="small">A bookmark you tap on the Seattle Tennis Club GameTime site, signed in. It shows open courts by day (tap one to go straight to GameTime's booking form), copies your own bookings here, and has tabs for lessons, clinics, the waitlist and partners. On seattletennisclub.org it shows dinner times after the days you play. It only reads; you always finish a booking on the club's own pages.</p>
+          <div class="row-btns"><button class="btn" id="gt-new" type="button">Make my GameTime button</button></div>
+          <div id="gt-show" hidden class="stack">
+            <p class="small"><b>On a computer:</b> drag this to your bookmarks bar: <a class="btn" id="gt-link" href="#">🎾 STC courts</a></p>
+            <p class="small"><b>On iPhone:</b> tap Copy, then in Safari bookmark any page (Share, Add Bookmark) and name it "STC courts". Open Bookmarks, tap Edit, open that bookmark and paste over its address. On stc.gametime.net, type "STC courts" in the address bar and tap the bookmark.</p>
+            <div class="row-btns"><button class="btn" id="gt-copy" type="button">Copy button code</button></div>
+            <p class="small">The button holds a private key that can only add court bookings to your account. Make a new one to turn the old one off.</p>
+          </div>
+          <p class="small err-text" id="gt-err" hidden></p>
+        </div>
+      </details>
+      <details>
+        <summary><span>Quick log<small>Log a session from a Shortcut or Home Screen button</small></span></summary>
+        <div>
+          <p class="small">A private link that can only add (and undo) play sessions.</p>
+          <div class="row-btns"><button class="btn" id="ql-new" type="button">Make my quick-log link</button></div>
+          <div class="field" id="ql-show" hidden>
+            <label for="ql-url">Your quick-log link (shown once)</label>
+            <input id="ql-url" type="text" readonly>
+            <div class="row-btns" style="margin-top:6px"><button class="btn" id="ql-copy" type="button">Copy link</button><a class="btn" id="ql-open" target="_blank" rel="noopener">Open the page</a></div>
+          </div>
+          <p class="small err-text" id="ql-err" hidden></p>
+          <p class="small"><b>One-tap Shortcut:</b> in the Shortcuts app, tap +, add <b>Get Contents of URL</b>, paste your link, set Method to <b>POST</b> and Request Body to <b>JSON</b> with <b>kind</b> (Text) = <code>singles</code> and <b>minutes</b> (Number) = <code>90</code>, then add <b>Show Result</b>. Other kinds: doubles, hitting, drills, ball_machine, serves. Add a <b>racket</b> field (for example <code>v8</code>) to pick a racket.</p>
+          <p class="small"><b>Simpler:</b> open the page in Safari, tap Share, then Add to Home Screen. It opens to big buttons for type and time.</p>
+        </div>
+      </details>
+      <details>
+        <summary><span>Chat assistant<small>Log play by chatting with Claude</small></span></summary>
+        <div>
+          <p class="small">Say "I played an hour of singles". Make a private link, then in Claude open Settings, Connectors, Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your gear, so keep it to yourself.</p>
+          <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
+          <div class="field" id="tok-show" hidden>
+            <label for="tok-url">Your connector link (shown once)</label>
+            <input id="tok-url" type="text" readonly>
+            <div class="row-btns" style="margin-top:6px"><button class="btn" id="tok-copy" type="button">Copy link</button></div>
+          </div>
+          <p class="small err-text" id="tok-err" hidden></p>
+        </div>
+      </details>
+      <div class="stack" style="gap:4px" id="tok-wrap" hidden><span class="lbl">Links in use</span><ol class="plays" id="tok-list"></ol></div>
+    </section>
+    <section class="card" aria-labelledby="h-backup">
+      <h2 id="h-backup">Backup</h2>
+      <div class="row-btns">
+        <button class="btn" id="export" type="button">Back up to a file</button>
+        <label class="btn" for="import">Restore from a file<input id="import" type="file" accept="application/json,.json"></label>
+      </div>
+    </section>
   </div>
   </div>
 </div>
+
+<div class="scrim" id="log-scrim" hidden></div>
+<div class="sheet" id="log-sheet" role="dialog" aria-modal="true" aria-labelledby="h-log" hidden>
+  <div class="grab"></div>
+  <div class="sheet-head"><h2 id="h-log">Log play</h2><button class="xbtn" type="button" id="log-close" aria-label="Close">×</button></div>
+  <fieldset class="picks" id="log-rackets"><legend>Racket</legend></fieldset>
+  <fieldset class="picks" id="kind-picks"><legend>Type</legend></fieldset>
+  <fieldset class="picks" id="dur-picks"><legend>Time</legend></fieldset>
+  <div class="grid2">
+    <div class="field" id="f-dur-other" hidden><label for="dur-other">Hours</label><input id="dur-other" type="number" min="0.25" max="10" step="0.25" inputmode="decimal" placeholder="e.g. 2.5"></div>
+    <div class="field"><label for="play-date">Day</label><input id="play-date" type="date"></div>
+  </div>
+  <p class="note" id="log-note"></p>
+  <p class="small err-text" id="log-err" role="alert" hidden></p>
+  <button class="btn primary wide" id="log-play" type="button">Log</button>
+</div>
+
 <nav class="tabbar" id="tabbar" hidden aria-label="Sections">
-  <button type="button" data-go="measure" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Measure</button>
-  <button type="button" data-go="play"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6c3.5 3.5 3.5 9.3 0 12.8M18.4 5.6c-3.5 3.5-3.5 9.3 0 12.8"/></svg>Play</button>
-  <button type="button" data-go="racket"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="9" rx="6" ry="7" transform="rotate(-40 10 9)"/><path d="M14.5 13.5l6 7M6.5 5.5l7 7M5 9.5l5.5-5.5M9 13.5l5.5-5.5"/></svg>Gear</button>
-  <button type="button" data-go="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Account</button>
+  <button type="button" data-go="today" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Today</button>
+  <button type="button" data-go="measure"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Measure</button>
+  <button type="button" data-go="courts"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Courts</button>
+  <button type="button" data-go="gear"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="9" rx="6" ry="7" transform="rotate(-40 10 9)"/><path d="M14.5 13.5l6 7M6.5 5.5l7 7M5 9.5l5.5-5.5M9 13.5l5.5-5.5"/></svg>Gear</button>
 </nav>
 
 <script type="module">
@@ -582,6 +769,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   let current = null;     // racket id
   let last = null;        // last analysis {hz, ...}
   let lastIsSample = false;
+  let lastSaved = false;  // the reading on screen is already saved
 
   const newId = () => "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   const blank = (name) => ({ name, head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null, readings: [], plays: [], jobs: [] });
@@ -754,27 +942,34 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   function renderAfterSync() {
     // Don't overwrite a field the person is typing in.
     const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
-    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings(); renderJobs(); renderShoes(); renderOverview();
+    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings(); renderJobs(); renderShoes(); renderOverview(); renderViews();
   }
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
     return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : new Date(t).toLocaleDateString();
   }
+  // Initials for the round Settings button in each tab's title row.
+  const initials = () => {
+    const s = (user && (user.name || user.email) || "").trim(), p = s.split(/[\s@._-]+/).filter(Boolean);
+    return ((p[0] || "?")[0] + (user && user.name && p.length > 1 ? p[1][0] : "")).toUpperCase();
+  };
   function renderSync() {
-    const chip = $("sync-chip"), note = $("store-note"), n = outbox.length;
+    const note = $("store-note"), n = outbox.length;
+    // Title rows only show the chip when something is off; Settings always shows it (CSS).
+    const chip = (text, cls) => document.querySelectorAll(".sync-chip").forEach(c => { c.hidden = !text; c.textContent = text || ""; c.className = "chip sync-chip" + (cls ? " " + cls : ""); });
     $("account").hidden = !!user && signedIn !== false && !resetToken;
     $("app").hidden = !user;
     $("tabbar").hidden = !user; document.body.classList.toggle("has-tabs", !!user);
     $("signout").hidden = !user;
-    $("who").textContent = user ? "Signed in as " + (user.name ? user.name + " (" + user.email + ")" : user.email) + "." : "";
+    $("who").textContent = user ? (user.name ? user.name + " · " + user.email : user.email) : "";
+    document.querySelectorAll(".me").forEach(b => { b.textContent = user ? initials() : ""; });
     if (user && signedIn === false) { $("h-account").textContent = "Sign in again"; $("account-intro").textContent = "Your session ended. Sign in again to sync. Until then, changes stay on this device."; if (!$("acct-email").value) $("acct-email").value = user.email || ""; }
-    if (!canSync()) { chip.hidden = true; note.textContent = "Rackets and readings are saved on this device."; return; }
-    chip.hidden = false; chip.className = "chip";
-    if (!user) { chip.hidden = true; return; }
-    if (signedIn === false) { chip.textContent = "Not synced"; chip.classList.add("warn"); note.textContent = "Signed out. Changes stay on this device" + (n ? " (" + n + " waiting)" : "") + "."; }
-    else if (!online) { chip.textContent = n ? n + " waiting" : "Offline"; chip.classList.add("warn"); note.textContent = "Offline. " + (n ? n + " changes will sync when you're back online." : "Everything is saved on this device."); }
-    else if (n) { chip.textContent = "Syncing"; note.textContent = n + " changes syncing."; }
-    else { chip.textContent = "Synced"; chip.classList.add("good"); note.textContent = "Synced " + (lastSync ? ago(lastSync) : "") + ". Your rackets are the same on every device you sign in on."; }
+    if (!canSync()) { chip(null); note.textContent = "Everything is saved on this device."; return; }
+    if (!user) { chip(null); return; }
+    if (signedIn === false) { chip("Not synced", "warn"); note.textContent = "Signed out. Changes stay on this device" + (n ? " (" + n + " waiting)" : "") + "."; }
+    else if (!online) { chip(n ? n + " waiting" : "Offline", "warn"); note.textContent = "Offline. " + (n ? n + " changes will sync when you're back online." : "Everything is saved on this device."); }
+    else if (n) { chip("Syncing"); note.textContent = n + " changes syncing."; }
+    else { chip("Synced", "good"); note.textContent = "Synced " + (lastSync ? ago(lastSync) : "") + ". Your gear is the same on every device you sign in on."; }
     if (refused) note.textContent += " The server refused one change (" + refused + "); a copy is kept on this device.";
   }
   addEventListener("online", () => { online = true; sync(); });
@@ -817,10 +1012,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     sl.hidden = !bits.length;
     sl.textContent = bits.length ? bits.join(", ").replace(/^./, c => c.toUpperCase()) : "";
     $("cal-reset").hidden = !(r.calib && r.calib !== 1);
-    $("cal-text").textContent = r.calib && r.calib !== 1
-      ? "Calibrated" + (r.calibAt ? " on " + new Date(r.calibAt).toLocaleDateString() : "") + ". Recalibrate after each restring."
-      : "Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.";
-    renderRestring();
+    $("cal-status").textContent = r.calib && r.calib !== 1
+      ? "Readings are calibrated to your stringer" + (r.calibAt ? " (since " + new Date(r.calibAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + ")" : "") + "."
+      : "Readings are estimates. Calibrate right after a restring to match your stringer.";
+    renderRestring(); renderViews();
   }
   function renderReadout() {
     const r = R();
@@ -828,13 +1023,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     $("u-kg").setAttribute("aria-pressed", unit === "kg"); $("u-lb").setAttribute("aria-pressed", unit === "lb");
     if (last && r) {
       $("big").firstChild.nodeValue = fmt(tensionKg(last.hz, r));
-      $("hz").textContent = last.hz.toFixed(0) + " Hz";
+      $("hz").textContent = last.hz.toFixed(0) + " Hz"; $("hz").hidden = false;
       $("bed-line").textContent = (r.calib && r.calib !== 1 ? "Calibrated to your stringer" : "Estimated stringing-machine tension")
         + " · " + fmt(bedKg(last.hz, r)) + " " + unit + " in the bed";
       $("bed-line").hidden = false;
-    } else { $("big").firstChild.nodeValue = "--"; $("hz").textContent = "-- Hz"; $("bed-line").hidden = true; }
-    $("sample-chip").hidden = !lastIsSample;
-    $("save").disabled = !last || lastIsSample;
+    } else { $("big").firstChild.nodeValue = "–"; $("hz").hidden = true; $("bed-line").hidden = true; }
+    $("save").hidden = !last || lastIsSample || lastSaved || !r;
+    if (last && r) $("save").textContent = "Save " + fmt(tensionKg(last.hz, r)) + " " + unit;
     $("cal-go").disabled = !last || lastIsSample;
     drawSpectrum();
   }
@@ -843,7 +1038,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const rs = r ? r.readings.slice().sort((a, b) => b.t - a.t) : [];
     if (!rs.length) {
       const li = document.createElement("li"); li.className = "empty"; li.style.display = "block";
-      li.textContent = "No saved readings for this racket yet. Tap, then press Save this reading.";
+      li.textContent = "No saved readings for this racket yet. Measure, then press Save.";
       list.appendChild(li);
     }
     const base = r && baseline(r);
@@ -860,8 +1055,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       del.onclick = () => { removeReading(current, x); renderHistory(); };
       li.append(t, k, h, del); list.appendChild(li);
     });
+    $("trend-count").textContent = rs.length ? rs.length + (rs.length === 1 ? " reading" : " readings") : "";
+    $("trend-lbl").textContent = r ? "Readings · " + r.name : "Readings";
+    $("trend-empty").hidden = rs.length >= 2;
+    $("trend-empty").textContent = rs.length === 1 ? "One reading saved. Save another to see the trend." : "No saved readings for this racket yet. Measure, then press Save.";
     drawTrend();
-    renderRestring();
+    renderRestring(); renderViews();
   }
   // The first reading on the current strings (and since the last calibration) is the reference for loss %.
   function baseline(r) {
@@ -872,7 +1071,9 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // ---------- play ----------
   const KINDS = [["singles", "Singles"], ["doubles", "Doubles"], ["hitting", "Hitting"], ["drills", "Lesson / drills"], ["ball_machine", "Ball machine"], ["serves", "Serves"]];
   const KIND_NAME = Object.fromEntries(KINDS);
-  const DURS = [[30, "30 min"], [45, "45 min"], [60, "1 h"], [90, "1.5 h"], [120, "2 h"], [180, "3 h"], [0, "Other"]];
+  const DURS = [[30, "30 min"], [45, "45 min"], [60, "1 h"], [90, "1 h 30"], [120, "2 h"], [180, "3 h"], [0, "Other"]];
+  // Session lengths as you'd say them: 45 min, 1 h, 1 h 30.
+  const dur = min => min < 60 ? min + " min" : Math.floor(min / 60) + " h" + (min % 60 ? " " + String(min % 60).padStart(2, "0") : "");
   const today = () => new Date().toLocaleDateString("en-CA");
   const hrs = min => { const h = min / 60; return (Math.round(h * 10) / 10).toString(); };
   // Sessions on the current strings: on or after the day they were strung (all of them if no date is set).
@@ -894,26 +1095,28 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     $("hours-num").firstChild.nodeValue = hrs(total);
     const since = r.strungOn ? new Date(r.strungOn + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
     $("hours-line").textContent = (mine.length ? mine.length + (mine.length === 1 ? " session" : " sessions") : "No sessions yet")
-      + (since ? " since these strings went in on " + since + "." : (r.jobs || []).length ? ". Record a restring when new strings go in to start counting them." : ". Set Strung on below so the count restarts when you restring.");
+      + (since ? " since " + since : (r.jobs || []).length ? ". Press Restrung when new strings go in." : ". Add the Strung on date under Edit.");
     const by = {}; mine.forEach(p => { by[p.kind] = (by[p.kind] || 0) + p.min; });
-    const parts = KINDS.filter(([k]) => by[k]).map(([k, n]) => n + " " + hrs(by[k]) + " h");
+    const parts = KINDS.filter(([k]) => by[k]).map(([k, n]) => n + " " + dur(by[k]));
     $("hours-split").hidden = parts.length < 2; $("hours-split").textContent = parts.join(" · ");
-    const all = (r.plays || []).slice().sort((a, b) => b.d.localeCompare(a.d) || 0);
-    const shown = showAllPlays ? all : all.slice(0, 5);
-    shown.forEach(p => {
+    // Recent sessions on Today, across all rackets.
+    const many = Object.keys(rackets).length > 1;
+    const all = Object.entries(rackets).flatMap(([id, x]) => (x.plays || []).map(p => [id, p])).sort((a, b) => b[1].d.localeCompare(a[1].d));
+    all.slice(0, 4).forEach(([id, p]) => {
       const li = document.createElement("li");
-      const t = document.createElement("span"); t.className = "t";
-      t.textContent = new Date(p.d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + (KIND_NAME[p.kind] || p.kind) + (r.strungOn && p.d < r.strungOn ? " (old strings)" : "");
-      const k = document.createElement("span"); k.className = "k"; k.textContent = hrs(p.min) + " h";
+      const t = document.createElement("span"); t.className = "t"; t.textContent = KIND_NAME[p.kind] || p.kind;
+      const s = document.createElement("small"); s.textContent = dayName(p.d) + (many ? " · " + rackets[id].name : ""); t.appendChild(s);
+      const k = document.createElement("span"); k.className = "k"; k.textContent = dur(p.min);
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this session");
-      del.onclick = () => { removePlay(current, p); renderPlays(); };
+      del.onclick = () => { removePlay(id, p); renderPlays(); };
       li.append(t, k, del); list.appendChild(li);
     });
-    $("plays-more").hidden = showAllPlays || all.length <= 5;
+    if (!all.length) { const li = document.createElement("li"); li.className = "empty"; li.style.display = "block"; li.textContent = "No sessions yet. Log one above after you play."; list.appendChild(li); }
+    $("plays-more").hidden = !all.length;
     // The day follows today (the app can sit open in the background for days) unless the person picked one.
     if (!$("play-date").value || !playDatePicked) $("play-date").value = today();
     $("play-date").max = today();
-    renderRestring(); renderJobs(); renderShoes(); renderOverview();
+    renderRestring(); renderJobs(); renderShoes(); renderOverview(); renderViews();
   }
   let showAllPlays = false, playDatePicked = false;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
@@ -927,7 +1130,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (broken) {
       const when = new Date(lastJob.to + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
       $("rs-chip").textContent = "Broken"; $("rs-chip").className = "chip bad"; $("rs-bar").hidden = true; $("rs-factors").textContent = "";
-      $("rs-line").textContent = "Strings broke on " + when + " after " + hrs(minutesBetween(r.plays, lastJob.from, lastJob.to)) + " h of play. Press Record a restring when they're replaced.";
+      $("rs-line").textContent = "Strings broke on " + when + " after " + hrs(minutesBetween(r.plays, lastJob.from, lastJob.to)) + " h of play. Press Restrung when they're replaced.";
       return;
     }
     const chip = $("rs-chip"); chip.textContent = a.label;
@@ -935,7 +1138,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const bar = $("rs-bar"); bar.className = "wear " + a.status; bar.hidden = a.status === "unknown";
     bar.firstChild.style.width = Math.min(100, a.life_used_pct) + "%"; bar.setAttribute("aria-valuenow", Math.min(100, a.life_used_pct));
     const due = a.restring_by && a.status !== "now" ? new Date(a.restring_by + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }) : null;
-    $("rs-line").textContent = a.status === "unknown" ? "Set the Strung on date below and log your play to see when these strings need replacing."
+    $("rs-line").textContent = a.status === "unknown" ? "Add the Strung on date under Edit and log your play to see when these strings need replacing."
       : a.status === "now" ? "Time for new strings: " + a.factors[0].note + "."
       : (100 - a.life_used_pct) + "% of string life left" + (a.reason === "dead" || a.reason === "break" ? ", about " + a.hours_left + " h of play" : "") + (due ? ". Restring by about " + due : "") + ".";
     const ul = $("rs-factors"); ul.textContent = "";
@@ -963,13 +1166,14 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     past.forEach(j => row(short(j.from) + " – " + short(j.to) + ": " + what(j) + ", " + REASON_NAMES[j.reason], hrs(minutesBetween(r.plays, j.from, j.to)), j));
     $("jobs-empty").hidden = past.length > 0;
     const stats = stringStats(rackets), ul = $("by-string-list"); ul.textContent = "";
-    $("by-string").hidden = !stats.length;
+    $("by-string").hidden = !stats.length; $("by-string-empty").hidden = stats.length > 0;
     stats.forEach(st => {
       const li = document.createElement("li"), b = document.createElement("b"), sp = document.createElement("span");
       b.textContent = st.avgHours + " h";
       sp.textContent = st.string + ": average over " + st.jobs + (st.jobs === 1 ? " set" : " sets") + (st.jobs > 1 ? " (" + st.minHours + "–" + st.maxHours + " h)" : "") + (st.broke ? ", broke " + st.broke + "×" : "") + (st.dead ? ", went dead " + st.dead + "×" : "");
       li.append(b, sp); ul.appendChild(li);
     });
+    renderViews();
   }
   // ---------- shoes ----------
   const shoeData = x => ({ name: x.name, startedOn: x.startedOn, retiredOn: x.retiredOn || null, lifeHours: x.lifeHours || DEFAULT_LIFE });
@@ -1002,11 +1206,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (cur) {
       // The pair in use can be removed too (for a mistake), from the list's end.
       const li = document.createElement("li"), t = document.createElement("span"), k = document.createElement("span"), del = document.createElement("button");
-      t.className = "t"; t.textContent = "Remove " + cur.name + " (added by mistake)"; k.textContent = "";
+      t.className = "t small"; t.textContent = "Remove " + cur.name + " (added by mistake)"; k.textContent = "";
       del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove the pair in use");
       del.onclick = () => removeShoe(cur);
       li.append(t, k, del); list.appendChild(li);
     }
+    renderViews();
   }
   function removeShoe(x) {
     shoes = shoes.filter(y => y !== x);
@@ -1038,36 +1243,157 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     say(cur ? cur.name + " retired after " + shoeWear(cur, rackets).hours + " h. " + name + " are in use." : name + " added. Every session you log counts toward them.");
   });
 
-  // ---------- all rackets ----------
+  // ---------- Today, the gear list and one racket's page ----------
+  const MAT_NAME = { poly: "Polyester", multi: "Multifilament", syngut: "Synthetic gut", gut: "Natural gut", hybrid: "Hybrid", kevlar: "Aramid" };
+  const STATUS_CLS = { good: "good", soon: "warn", now: "bad" };
+  const shortDate = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.slice(0, 4) === today().slice(0, 4) ? undefined : "numeric" });
+  const dayName = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const stringDesc = x => [x.stringName || MAT_NAME[x.material] || x.material, x.gauge ? Number(x.gauge).toFixed(2) : "", x.strungKg ? fmt(x.strungKg) + " " + unit : ""].filter(Boolean).join(" · ");
+  const latest = r => r.readings.slice().sort((x, y) => y.t - x.t)[0] || null;
+  const usual = () => [prefs.lastKind || prefs.kind || "singles", prefs.lastMin || (prefs.dur > 0 ? prefs.dur : 90)];
+  function setVal(el, num, small) { el.textContent = num; if (small) { const s = document.createElement("small"); s.textContent = small; el.appendChild(s); } }
+  // One racket's string state, for Today, the gear list and the racket page.
+  function racketState(r, personal) {
+    const a = restringAdvice(r, profile, today(), personal || personalBreak(rackets, profile));
+    const lastJob = (r.jobs || []).slice().sort((x, y) => x.to.localeCompare(y.to)).pop();
+    const hours = onTheseStrings(r).reduce((s, p) => s + p.min, 0);
+    if (!r.strungOn && lastJob && lastJob.reason === "broke") return { label: "Broken", cls: "bad", left: 0, hours, line: "Strings broke on " + shortDate(lastJob.to) + ". Press Restrung when they're replaced." };
+    const due = a.restring_by && a.status !== "now" ? shortDate(a.restring_by) : null;
+    const left = a.status === "unknown" ? null : Math.max(0, Math.min(100, 100 - a.life_used_pct));
+    const what = r.stringName || MAT_NAME[r.material] || "these strings";
+    const line = a.status === "unknown" ? "Add the day it was strung to see how much life the strings have left."
+      : a.status === "now" ? hrs(hours) + " h on " + what + ". Time for new strings."
+      : hrs(hours) + " h on " + what + (a.hours_left && (a.reason === "dead" || a.reason === "break") ? " · about " + a.hours_left + " h left" : "") + (due ? ", restring by " + due : "") + ".";
+    return { label: a.status === "unknown" ? "Not set up" : a.label, cls: STATUS_CLS[a.status] || "", left, hours, line };
+  }
   function renderOverview() {
-    const ul = $("ov-list"); if (!ul) return; ul.textContent = "";
-    const personal = personalBreak(rackets, profile), chipClass = { good: "good", soon: "warn", now: "bad" };
-    const row = (name, detail, chip, cls, onclick, isCurrent) => {
-      const li = document.createElement("li"), b = document.createElement("button"), n = document.createElement("span"), c = document.createElement("span"), d = document.createElement("span");
-      b.type = "button"; n.className = "n"; n.textContent = name; c.className = "chip " + (cls || ""); c.textContent = chip; d.className = "d"; d.textContent = detail;
-      if (isCurrent) b.setAttribute("aria-current", "true");
-      b.onclick = onclick; b.append(n, c, d); li.appendChild(b); ul.appendChild(li);
-    };
+    const ul = $("ov-list"); ul.textContent = "";
+    const personal = personalBreak(rackets, profile);
     Object.entries(rackets).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([id, r]) => {
-      const a = restringAdvice(r, profile, today(), personal), lastJob = (r.jobs || []).slice().sort((x, y) => x.to.localeCompare(y.to)).pop();
-      const broken = !r.strungOn && lastJob && lastJob.reason === "broke";
-      const lastR = r.readings.slice().sort((x, y) => y.t - x.t)[0];
-      const bits = [hrs(onTheseStrings(r).reduce((s2, p) => s2 + p.min, 0)) + " h on strings"];
-      if (r.stringName) bits.push(r.stringName);
-      if (lastR) bits.push("last " + fmt(readingKg(lastR, r)) + " " + unit);
-      if (a.restring_by && a.status !== "now" && !broken) bits.push("restring by " + new Date(a.restring_by + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }));
-      row(r.name, bits.join(" · "), broken ? "Broken" : a.label, broken ? "bad" : chipClass[a.status], () => {
-        current = id; prefs.racket = id; savePrefs(); showAllPlays = false; $("rs-form").hidden = true; $("rs-new").hidden = false;
-        renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs();
-        $("restring").scrollIntoView({ behavior: "smooth", block: "start" });
-      }, id === current);
+      const s = racketState(r, personal), lastR = latest(r);
+      const li = document.createElement("li"), b = document.createElement("button"), dot = document.createElement("span"), n = document.createElement("span"), c = document.createElement("span"), d = document.createElement("span");
+      b.type = "button"; dot.className = "dot " + s.cls; n.className = "n"; n.textContent = r.name; c.className = "chev"; c.textContent = "›"; d.className = "d";
+      d.textContent = [s.label, hrs(s.hours) + " h", stringDesc(r), lastR ? "last " + fmt(readingKg(lastR, r)) + " " + unit : ""].filter(Boolean).join(" · ");
+      b.onclick = () => openRacket(id);
+      b.append(dot, n, c, d); li.appendChild(b); ul.appendChild(li);
     });
-    const cur = currentShoe(shoes);
-    if (cur) { const w = shoeWear(cur, rackets); row(cur.name, w.hours + " of about " + w.life + " h", w.label, chipClass[w.status], () => $("shoes-card").scrollIntoView({ behavior: "smooth", block: "start" })); }
-    $("overview-card").hidden = ul.children.length < 2;
+  }
+  function renderToday() {
+    const r = R(); if (!r || !user) return;
+    $("td-date").textContent = new Date().toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+    const personal = personalBreak(rackets, profile), st = racketState(r, personal);
+    const fresh = Object.keys(rackets).length === 1 && !r.strungOn && !r.readings.length && !(r.plays || []).length && !(r.jobs || []).length;
+    $("td-setup").hidden = !fresh; $("td-hero").hidden = fresh;
+    const ring = $("td-ring"); ring.className = "ring " + st.cls;
+    ring.querySelector(".val").setAttribute("stroke-dasharray", (st.left ?? 0) + " 100"); ring.querySelector(".val").style.opacity = st.left ? 1 : 0;
+    $("td-pct").textContent = st.left === null ? "–" : st.left + "%";
+    $("td-chip").textContent = st.label; $("td-chip").className = "chip " + st.cls;
+    $("td-name").textContent = r.name; $("td-line").textContent = st.line;
+    $("td-hero").setAttribute("aria-label", r.name + ": " + st.label + ". " + st.line + " Open the racket.");
+    const ul = $("td-others"); ul.textContent = "";
+    Object.entries(rackets).filter(([id]) => id !== current).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([id, x]) => {
+      const s = racketState(x, personal);
+      const li = document.createElement("li"), b = document.createElement("button"), dot = document.createElement("span"), n = document.createElement("span"), d = document.createElement("span");
+      b.type = "button"; dot.className = "dot " + s.cls; n.className = "n"; n.textContent = x.name; d.className = "d";
+      d.textContent = s.left === null ? s.label : s.left + "% left · " + hrs(s.hours) + " h";
+      b.onclick = () => openRacket(id);
+      b.append(dot, n, d); li.appendChild(b); ul.appendChild(li);
+    });
+    // Shoes
+    const sh = currentShoe(shoes), shBar = $("td-sh-bar");
+    if (sh) {
+      const w = shoeWear(sh, rackets);
+      setVal($("td-sh-val"), w.hours, "/ " + w.life + " h");
+      shBar.hidden = false; shBar.className = "wear " + (w.status === "good" ? "" : w.status); shBar.firstChild.style.width = Math.min(100, Math.round(w.used * 100)) + "%";
+      $("td-sh-line").textContent = w.status === "good" ? sh.name : w.label + ": " + sh.name; $("td-sh-line").className = "t2 " + (w.status === "good" ? "" : STATUS_CLS[w.status] || "");
+    } else { setVal($("td-sh-val"), "Add"); shBar.hidden = true; $("td-sh-line").textContent = "the pair you play in"; $("td-sh-line").className = "t2"; }
+    // Tension
+    const lastR = latest(r);
+    if (lastR) {
+      const kg = readingKg(lastR, r), base = baseline(r);
+      setVal($("td-tn-val"), fmt(kg), unit);
+      const ch = $("td-tn-change");
+      if (base && lastR.t > base.t) { const loss = (1 - kg / readingKg(base, r)) * 100; ch.textContent = (loss >= 0 ? "−" : "+") + Math.abs(loss).toFixed(0) + "% since " + shortDate(new Date(base.t).toLocaleDateString("en-CA")); ch.className = "t2 " + (loss >= 20 ? "bad" : loss >= 10 ? "warn" : ""); }
+      else { ch.textContent = "saved " + ago(lastR.t); ch.className = "t2"; }
+      $("td-tn-line").textContent = r.strungKg ? "strung at " + fmt(r.strungKg) : "";
+    } else { setVal($("td-tn-val"), "–"); $("td-tn-change").textContent = "No reading yet"; $("td-tn-change").className = "t2"; $("td-tn-line").textContent = "Tap to measure"; }
+    // Next court
+    const now = Date.now(), nb = bookings.filter(b => b.start + b.min * 60000 > now).sort((a, b) => a.start - b.start)[0];
+    const box = $("td-ct-box"); box.textContent = "";
+    if (nb) {
+      const tz = nb.tz || clubTz(), wd = document.createElement("small");
+      wd.textContent = new Date(nb.start).toLocaleDateString(undefined, { timeZone: tz, weekday: "short" });
+      box.append(wd, document.createTextNode(new Date(nb.start).toLocaleDateString(undefined, { timeZone: tz, day: "numeric" })));
+      const when = new Date(nb.start).toLocaleTimeString(undefined, { timeZone: tz, hour: "numeric", minute: "2-digit" });
+      $("td-ct-title").textContent = (nb.start <= now ? "On now · " : "") + when + (nb.court ? " · " + nb.court : "");
+      $("td-ct-line").textContent = new Date(nb.start).toLocaleDateString(undefined, { timeZone: tz, month: "short", day: "numeric" }) + " · " + (KIND_NAME[nb.kind] || "Tennis") + " · " + dur(nb.min);
+    } else {
+      box.textContent = "–";
+      $("td-ct-title").textContent = "No court booked";
+      $("td-ct-line").textContent = plans.length ? "Every week: " + plans.map(planTitle).slice(0, 2).join(", ") : "Add a booking or the times you play every week";
+    }
+    // One-tap log
+    const [kind, min] = usual();
+    $("td-repeat-main").textContent = (KIND_NAME[kind] || "Singles") + " " + dur(min);
+    $("td-repeat-sub").textContent = (prefs.lastKind ? "same as last time" : "log today") + " · " + r.name;
+    $("td-repeat").setAttribute("aria-label", "Log " + dur(min) + " of " + (KIND_NAME[kind] || "singles").toLowerCase() + " today on " + r.name);
+  }
+  // Everything on one racket's page, newest first: sessions, readings and restrings.
+  let tlShown = 20;
+  const OUT_NAME = { broke: "Strings broke", dead: "Strings went dead", routine: "Old strings out" };
+  function renderTimeline() {
+    const r = R(), ol = $("timeline"); ol.textContent = ""; if (!r) return;
+    const ev = [];
+    (r.plays || []).forEach(p => ev.push({ t: Date.parse(p.d + "T12:00:00"), cls: "play", title: KIND_NAME[p.kind] || p.kind, sub: dayName(p.d), val: dur(p.min), label: "session", del: () => { removePlay(current, p); renderPlays(); } }));
+    r.readings.forEach(x => { const d = new Date(x.t); ev.push({ t: x.t, cls: "reading", title: "Tension reading", sub: d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + Math.round(x.hz) + " Hz", val: fmt(readingKg(x, r)) + " " + unit, label: "reading", del: () => { removeReading(current, x); renderHistory(); } }); });
+    (r.jobs || []).forEach(j => ev.push({ t: Date.parse(j.to + "T00:00:00"), cls: "out " + j.reason, title: OUT_NAME[j.reason] || "Old strings out", sub: stringDesc(j) + " · lasted " + hrs(minutesBetween(r.plays, j.from, j.to)) + " h", val: "", label: "set of strings from the history", del: () => { removeJob(current, j); renderJobs(); renderRestring(); } }));
+    if (r.strungOn) ev.push({ t: Date.parse(r.strungOn + "T00:00:01"), cls: "strung", title: "Strung: " + stringDesc(r), sub: dayName(r.strungOn), val: "" });
+    ev.sort((a, b) => b.t - a.t);
+    $("tl-empty").hidden = ev.length > 0;
+    ev.slice(0, tlShown).forEach(e => {
+      const li = document.createElement("li"); li.className = e.cls;
+      const t = document.createElement("span"); t.className = "t"; t.textContent = e.title;
+      const s = document.createElement("small"); s.textContent = e.sub; t.appendChild(s);
+      const k = document.createElement("span"); k.className = "k"; k.textContent = e.val;
+      li.append(t, k);
+      if (e.del) { const x = document.createElement("button"); x.type = "button"; x.className = "x"; x.textContent = "×"; x.setAttribute("aria-label", "Remove this " + e.label); x.onclick = e.del; li.appendChild(x); }
+      else li.appendChild(document.createElement("span"));
+      ol.appendChild(li);
+    });
+    $("tl-more").hidden = ev.length <= tlShown;
+  }
+  function renderRacketHead() {
+    const r = R(); if (!r) return;
+    $("rp-name").textContent = r.name;
+    $("rp-specs").textContent = [stringDesc(r), r.strungOn ? "strung " + shortDate(r.strungOn) : "", (r.pattern || "16x19").replace("x", " × "), r.head + " sq in", r.weight ? r.weight + " g" : ""].filter(Boolean).join(" · ");
+  }
+  // The calibrate card shows on Measure right after a restring (until it's done or dismissed), or when asked for.
+  let calOpen = false;
+  function renderCalCard() {
+    const r = R(), card = $("cal-card"); if (!r) { card.hidden = true; return; }
+    const strungAt = r.strungOn ? Date.parse(r.strungOn + "T00:00:00") : 0;
+    const fresh = r.strungOn && Date.now() - Date.parse(r.strungOn + "T12:00:00") < 2 * 864e5;
+    const done = r.calibAt && r.calibAt >= strungAt;
+    const skipped = (prefs.calSkip || {})[current] === (r.strungOn || "none");
+    card.hidden = !(calOpen || (fresh && !done && !skipped));
+  }
+  function renderViews() { if (!user) return; renderOverview(); renderToday(); renderTimeline(); renderRacketHead(); renderCalCard(); }
+  function selectRacket(id) {
+    if (!rackets[id] || id === current) return;
+    current = id; prefs.racket = id; savePrefs(); showAllPlays = false; calOpen = false; tlShown = 20;
+    // A tap belongs to the racket it was made on: start fresh so it can't be saved to (or calibrate) this one.
+    if (last && !lastIsSample) { last = null; liveTaps = []; setStatus("Tap " + R().name + " to measure it."); }
+    $("rs-form").hidden = true;
+    renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs(); renderOverview();
+  }
+  function openRacket(id, edit) {
+    selectRacket(id);
+    showTab("racket");
+    setSpecs(!!edit);
+    if (edit) $("r-name").focus();
   }
 
-  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); renderJobs(); renderShoes(); renderOverview(); }
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); renderJobs(); renderShoes(); renderOverview(); renderViews(); }
 
   // ---------- court bookings ----------
   const clubTz = () => DEFAULT_TZ;
@@ -1077,6 +1403,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "tennis-" + new Date(b.start).toISOString().slice(0, 10) + ".ics";
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   }
+  const CAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg>';
   function renderBookings() {
     $("courts").hidden = !user;
     const ol = $("bookings"); ol.textContent = "";
@@ -1089,9 +1416,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const r = b.racketId && rackets[b.racketId] ? " · " + rackets[b.racketId].name : "";
       const cut = cancelBy(b);
       const cancelNote = !done && cut ? (cut > now ? " · cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : " · past the 6-hour cancel cut-off") : "";
-      t.append(w, document.createTextNode(" · " + bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : cancelNote)));
-      const k = document.createElement("span"); k.className = "k"; k.textContent = hrs(b.min) + " h";
-      const cal = document.createElement("button"); cal.type = "button"; cal.textContent = "📅"; cal.setAttribute("aria-label", "Add this booking to your calendar");
+      const more = document.createElement("small"); more.textContent = bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : cancelNote);
+      t.append(w, more);
+      const k = document.createElement("span"); k.className = "k"; k.textContent = dur(b.min);
+      const cal = document.createElement("button"); cal.type = "button"; cal.innerHTML = CAL_ICON; cal.setAttribute("aria-label", "Add this booking to your calendar");
       cal.onclick = () => downloadIcs(b);
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this booking");
       del.onclick = () => {
@@ -1106,7 +1434,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     Object.entries(rackets).forEach(([id, r]) => { const o = document.createElement("option"); o.value = id; o.textContent = r.name; sel.appendChild(o); });
     sel.value = rackets[keep] ? keep : "";
     if (!$("bk-date").value) $("bk-date").value = today();
-    renderPlans();
+    renderPlans(); renderViews();
   }
   function renderPlans() {
     const ol = $("plans"); ol.textContent = "";
@@ -1114,7 +1442,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const li = document.createElement("li");
       const t = document.createElement("span"); t.className = "t";
       const w = document.createElement("b"); w.textContent = planTitle(p);
-      t.append(w, document.createTextNode(" · " + hrs(p.min) + " h" + (p.note ? " · with " + p.note : "")));
+      t.append(w, document.createTextNode(" · " + dur(p.min) + (p.note ? " · with " + p.note : "")));
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this regular time");
       del.onclick = () => { queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); renderPlans(); };
       li.append(t, del); ol.appendChild(li);
@@ -1159,8 +1487,9 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     g.fillStyle = css("--optic"); g.strokeStyle = css("--ink"); g.lineWidth = 1;
     g.beginPath(); g.arc(px, 8, 5, 0, Math.PI * 2); g.fill(); g.stroke();
   }
-  function drawTrend() {
-    const c = $("trend"), r = R();
+  function drawTrend() { drawTrendOn($("trend")); drawTrendOn($("trend2")); }
+  function drawTrendOn(c) {
+    const r = R();
     const { g, w, h } = prep(c);
     const rs = r ? r.readings.slice().sort((a, b) => a.t - b.t) : [];
     c.hidden = rs.length < 2;
@@ -1190,7 +1519,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // ---------- results ----------
   function showResult(res, sample) {
     if (res.error) { setStatus(res.error, true); return; }
-    last = res; lastIsSample = !!sample;
+    last = res; lastIsSample = !!sample; lastSaved = false;
     if (sample) setStatus("This is a made-up sample so you can see the display. Tap your own racket to measure it.");
     else {
       let msg = res.taps > 1 ? `Median of ${res.taps} taps.` : "One clear tap.";
@@ -1255,17 +1584,18 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
         const byHz = liveTaps.slice().sort((p, q) => p.hz - q.hz), mid = byHz[byHz.length >> 1];
         const spread = byHz.length > 1 ? (byHz[byHz.length - 1].hz - byHz[0].hz) / mid.hz : 0;
         showResult({ ...mid, taps: liveTaps.length, spread, clipped: res.clipped, quiet: res.quiet, dropped: 0 }, false);
+        $("listen-sub").textContent = liveTaps.length + (liveTaps.length === 1 ? " tap" : " taps") + " · tap to stop";
       }
     };
     src.connect(proc); proc.connect(ctx.destination);
-    live = true; $("listen").textContent = "Listening… tap the strings"; $("listen").classList.add("listening");
+    live = true; $("listen-label").textContent = "Listening…"; $("listen-sub").textContent = "tap the strings"; $("listen").classList.add("listening");
     setStatus("Listening. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && live) stopListening(); });
   function stopListening() {
     live = false;
     try { proc && proc.disconnect(); stream && stream.getTracks().forEach(t => t.stop()); ctx && ctx.close(); } catch {}
-    $("listen").textContent = "Listen for taps"; $("listen").classList.remove("listening");
+    $("listen-label").textContent = "Listen for taps"; $("listen-sub").textContent = "then tap the strings"; $("listen").classList.remove("listening");
   }
 
   // ---------- events ----------
@@ -1286,20 +1616,17 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     addReading(current, { t: Date.now(), hz: +last.hz.toFixed(1), s: snap(r) });
     renderSelect(); renderHistory();
     setStatus("Saved " + fmt(tensionKg(last.hz, r)) + " " + unit + " for " + r.name + ".");
-    $("save").disabled = true;
+    lastSaved = true; renderReadout();
   };
-  $("racket").onchange = e => {
-    current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false;
-    // A tap belongs to the racket it was made on: start fresh so it can't be saved to (or calibrate) this one.
-    if (last && !lastIsSample) { last = null; liveTaps = []; setStatus("Tap " + R().name + " to measure it."); }
-    renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs(); renderOverview(); $("rs-form").hidden = true;
-  };
-  $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); });
+  $("racket").onchange = e => selectRacket(e.target.value);
+  $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); updateLogLabel(); });
   $("dur-picks").addEventListener("change", e => {
     prefs.dur = +e.target.value; savePrefs();
     $("f-dur-other").hidden = prefs.dur !== 0;
     if (prefs.dur === 0) $("dur-other").focus();
+    updateLogLabel();
   });
+  $("dur-other").addEventListener("input", updateLogLabel);
   $("log-play").onclick = () => {
     const r = R(); if (!r) return;
     const kind = (document.querySelector('input[name="kind"]:checked') || {}).value || "singles";
@@ -1311,15 +1638,25 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     }
     const d = $("play-date").value || today();
     if (d > today()) { setPlayMsg("That day hasn't happened yet."); return; }
-    addPlay(current, { d, min, kind });
+    setPlayMsg("");
+    logPlay(current, { d, min, kind });
+    closeLog();
+  };
+  function setPlayMsg(m) { $("log-err").textContent = m || ""; $("log-err").hidden = !m; }
+  // Log a session and offer Undo in the bar.
+  function logPlay(id, p) {
+    const r = rackets[id]; if (!r) return;
+    addPlay(id, p);
+    prefs.lastKind = p.kind; prefs.lastMin = p.min; savePrefs();
     $("play-date").value = today(); playDatePicked = false;
     renderPlays(); renderSettings();
-    const total = onTheseStrings(r).reduce((a, p) => a + p.min, 0);
-    setPlayMsg("Logged " + hrs(min) + " h of " + KIND_NAME[kind].toLowerCase() + ". " + hrs(total) + " h on these strings.");
-  };
-  function setPlayMsg(m) { $("hours-line").textContent = m; }
-  $("plays-more").onclick = () => { showAllPlays = true; renderPlays(); };
-  $("bk-save").onclick = () => {
+    offerUndo("Logged " + dur(p.min) + " of " + (KIND_NAME[p.kind] || p.kind).toLowerCase() + (p.d !== today() ? " on " + shortDate(p.d) : "") + " on " + r.name + ".", () => {
+      const k = rackets[id]; if (!k) return;
+      k.plays = (k.plays || []).filter(y => y !== p);
+      queue({ op: "play.delete", id: p.id });
+      renderPlays(); renderSettings();
+    });
+  }  $("bk-save").onclick = () => {
     const d = $("bk-date").value, tm = $("bk-time").value;
     if (!d || !/^\d{2}:\d{2}/.test(tm)) { bkErr("Pick the day and start time."); return; }
     const tz = clubTz(), start = zonedToUtc(d, tm.slice(0, 5), tz);
@@ -1358,7 +1695,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     let kg = isFinite(v) && v > 0 ? +(unit === "lb" ? v / LB : v).toFixed(2) : null;
     // Typed lb while the app is in kg (or the other way round): say so rather than saving a value the server refuses.
     if (kg !== null && (kg < 10 || kg > 36)) {
-      setStatus("Strung tension " + v + " " + unit + " looks out of range. Strung tensions are usually 18–30 kg (40–65 lb); check the kg / lb switch at the top.", true);
+      setStatus("Strung tension " + v + " " + unit + " looks out of range. Strung tensions are usually 18–30 kg (40–65 lb); check the units in Settings.", true);
       renderSettings(); return;
     }
     r.strungKg = kg;
@@ -1374,7 +1711,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   bind("r-name", "name"); bind("r-head", "head", true); bind("r-gauge", "gauge", true); bind("r-mat", "material"); bind("r-pattern", "pattern");
   $("add").onclick = () => {
     const id = newId(); rackets[id] = blank("Racket " + (Object.keys(rackets).length + 1));
-    current = id; prefs.racket = id; savePrefs(); persist(id); renderAll(); $("r-name").focus();
+    persist(id); openRacket(id, true); $("r-name").select();
   };
   $("del").onclick = () => { $("del-name").textContent = R().name; $("del-confirm").hidden = false; };
   $("del-no").onclick = () => { $("del-confirm").hidden = true; };
@@ -1390,7 +1727,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       renderAll();
     });
     if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
-    current = Object.keys(rackets)[0]; localSave(); renderAll();
+    current = Object.keys(rackets)[0]; localSave(); renderAll(); setSpecs(false); showTab("gear");
   };
   $("cal-go").onclick = () => {
     const r = R(); let v = parseFloat($("cal-val").value);
@@ -1404,10 +1741,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     }
     const factor = kg / machineKg(last.hz, r);
     if (factor < 0.3 || factor > 3) {
-      setStatus("This tap reads very far from " + fmt(kg) + " " + unit + ". Check the head size, gauge and string type above, and that this tap was on this racket.", true);
+      setStatus("This tap reads very far from " + fmt(kg) + " " + unit + ". Check the head size, gauge and string type under Edit on the racket's page, and that this tap was on this racket.", true);
       return;
     }
-    r.calib = +factor.toFixed(5); r.calibAt = Date.now();
+    r.calib = +factor.toFixed(5); r.calibAt = Date.now(); calOpen = false;
     r.strungKg = +kg.toFixed(2);
     if (!r.strungOn) r.strungOn = new Date().toLocaleDateString("en-CA");
     addReading(current, { t: r.calibAt, hz: +last.hz.toFixed(1), s: snap(r) });
@@ -1431,17 +1768,16 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       queue({ op: "job.delete", id: job.id }); persist(id); renderAll();
     });
   };
-  $("rs-quick").onclick = () => { $("rs-new").click(); };
   $("rs-new").onclick = () => {
     const r = R(); if (!r) return;
     $("rs-day").value = today(); $("rs-day").max = today();
     $("rs-name").value = r.stringName || ""; $("rs-gauge").value = r.gauge; $("rs-mat").value = r.material;
     $("rs-kg-label").textContent = "Tension (" + unit + ")"; $("rs-kg").value = r.strungKg ? fmt(r.strungKg) : "";
     $("rs-why").hidden = !r.strungOn; // after Strings broke there is nothing in the racket to save
-    $("rs-err").hidden = true; $("rs-form").hidden = false; $("rs-new").hidden = true;
+    $("rs-err").hidden = true; $("rs-form").hidden = false; setSpecs(false);
     $("rs-form").scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
-  const closeRestring = () => { $("rs-form").hidden = true; $("rs-new").hidden = false; };
+  const closeRestring = () => { $("rs-form").hidden = true; };
   $("rs-cancel").onclick = closeRestring;
   $("rs-form").addEventListener("submit", e => {
     e.preventDefault();
@@ -1450,7 +1786,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (d > today()) return err("That day hasn't happened yet.");
     if (r.strungOn && d < r.strungOn) return err("That's before the current strings went in (" + r.strungOn + ").");
     const t = parseFloat($("rs-kg").value), kg = isFinite(t) && t > 0 ? +(unit === "lb" ? t / LB : t).toFixed(2) : null;
-    if (kg !== null && (kg < 10 || kg > 36)) return err("Tension " + t + " " + unit + " looks out of range. Check the kg / lb switch at the top.");
+    if (kg !== null && (kg < 10 || kg > 36)) return err("Tension " + t + " " + unit + " looks out of range. Check the units in Settings.");
     const g = parseFloat($("rs-gauge").value);
     if (!(g >= 1.05 && g <= 1.45)) return err("Gauge should be between 1.05 and 1.45 mm.");
     const why = (document.querySelector('input[name="rs-why"]:checked') || {}).value || "routine";
@@ -1460,23 +1796,97 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (job) addJob(current, job);
     Object.assign(r, { strungOn: d, stringName: $("rs-name").value.trim() || null, gauge: g, material: $("rs-mat").value, strungKg: kg });
     persist(current); closeRestring(); renderAll();
-    say((job ? "Old strings saved to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "Restring saved. ") + "Tap the new strings on Measure and calibrate for the best readings.");
+    say((job ? "Old strings saved to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "Restring saved. ") + "Tap the new strings on Measure to calibrate them.");
   });
   $("toast-undo").onclick = () => { const f = undoFn; hideUndo(); if (f) f(); };
 
   // ---------- tabs ----------
-  const TABS = ["measure", "play", "racket", "account"];
+  const TABS = ["today", "measure", "courts", "gear", "racket", "settings"];
+  let prevTab = "today", specsOpen = false, rpSeg = "timeline";
   function showTab(t, keepScroll) {
-    if (!TABS.includes(t)) t = "measure";
+    if (!TABS.includes(t)) t = "today";
+    if (t === "settings" && prefs.tab !== "settings") prevTab = prefs.tab || "today";
     prefs.tab = t; savePrefs();
     document.querySelectorAll(".tab").forEach(el => { el.hidden = el.dataset.tab !== t; });
-    $("racket-bar").hidden = t === "account";
-    document.querySelectorAll("#tabbar button").forEach(b => { if (b.dataset.go === t) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+    const lit = t === "racket" ? "gear" : t;
+    document.querySelectorAll("#tabbar button").forEach(b => { if (b.dataset.go === lit) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
     if (!keepScroll) window.scrollTo(0, 0);
-    if (t === "measure") { drawSpectrum(); drawTrend(); }
+    if (t === "measure") { drawSpectrum(); drawTrend(); renderCalCard(); }
+    if (t === "racket") { renderRacketHead(); renderTimeline(); setSeg(rpSeg); }
     if (t !== "measure" && live) stopListening();
   }
-  document.querySelectorAll("#tabbar button").forEach(b => { b.onclick = () => showTab(b.dataset.go); });
+  // Any element with data-go switches tab (the tab bar, back buttons, the initials button).
+  document.addEventListener("click", e => {
+    const b = e.target.closest && e.target.closest("[data-go]"); if (!b) return;
+    showTab(b.dataset.go);
+    const d = b.dataset.open && $(b.dataset.open); if (d) { d.open = true; d.scrollIntoView({ block: "start" }); }
+  });
+  $("set-back").onclick = () => showTab(prevTab && prevTab !== "settings" ? prevTab : "today");
+  // The racket page: segments, Edit, and its shortcuts.
+  function setSeg(s) {
+    rpSeg = s;
+    document.querySelectorAll(".segc button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.seg === s)));
+    document.querySelectorAll("[data-panel]").forEach(p => { p.hidden = p.dataset.panel !== s; });
+    if (s === "tension") drawTrend();
+  }
+  document.querySelectorAll(".segc button").forEach(b => { b.onclick = () => setSeg(b.dataset.seg); });
+  function setSpecs(open) {
+    specsOpen = open; $("specs").hidden = !open; $("rp-edit").setAttribute("aria-pressed", String(open)); $("del-confirm").hidden = true;
+    if (open) { $("rs-form").hidden = true; $("specs").scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+  }
+  $("rp-edit").onclick = () => setSpecs(!specsOpen);
+  $("rp-done").onclick = () => setSpecs(false);
+  $("rp-measure").onclick = () => showTab("measure");
+  $("rp-cal").onclick = () => { calOpen = true; showTab("measure"); $("cal-card").scrollIntoView({ block: "center" }); };
+  $("cal-skip").onclick = () => { calOpen = false; const r = R(); if (r) { prefs.calSkip = { ...(prefs.calSkip || {}), [current]: r.strungOn || "none" }; savePrefs(); } renderCalCard(); };
+  $("tl-more").onclick = () => { tlShown += 20; renderTimeline(); };
+  // Today
+  $("trend-card").onclick = () => { openRacket(current); setSeg("tension"); };
+  $("plays-more").onclick = () => { openRacket(current); setSeg("timeline"); };
+  $("td-hero").onclick = () => openRacket(current);
+  $("td-setup-go").onclick = () => openRacket(current, true);
+  $("td-shoes").onclick = () => { showTab("gear"); $("shoes-card").scrollIntoView({ block: "start" }); if (!currentShoe(shoes)) $("sh-new").click(); };
+  $("td-tension").onclick = () => showTab("measure");
+  $("td-court").onclick = () => showTab("courts");
+  $("td-repeat").onclick = () => { const [kind, min] = usual(); logPlay(current, { d: today(), min, kind }); };
+  $("td-other").onclick = () => openLog();
+  // The log sheet
+  let sheetReturn = null;
+  function openLog() {
+    const box = $("log-rackets"); box.querySelectorAll("label").forEach(l => l.remove());
+    const ids = Object.keys(rackets).sort((a, b) => rackets[a].name.localeCompare(rackets[b].name));
+    box.hidden = ids.length < 2;
+    ids.forEach(id => {
+      const l = document.createElement("label"), i = document.createElement("input"), sp = document.createElement("span");
+      i.type = "radio"; i.name = "log-r"; i.value = id; i.checked = id === current; sp.textContent = rackets[id].name; l.append(i, sp); box.appendChild(l);
+    });
+    const [kind, min] = usual();
+    document.querySelectorAll('input[name="kind"]').forEach(i => { i.checked = i.value === kind; });
+    const known = DURS.some(([v]) => v === min);
+    document.querySelectorAll('input[name="dur"]').forEach(i => { i.checked = +i.value === (known ? min : 0); });
+    $("f-dur-other").hidden = known; if (!known) $("dur-other").value = +(min / 60).toFixed(2);
+    $("play-date").value = today(); $("play-date").max = today(); playDatePicked = false;
+    setPlayMsg(""); updateLogLabel();
+    sheetReturn = document.activeElement; hideUndo();
+    $("log-scrim").hidden = false; $("log-sheet").hidden = false; document.body.classList.add("sheet-open");
+    (document.querySelector('#kind-picks input:checked') || $("log-play")).focus();
+  }
+  function closeLog() {
+    $("log-scrim").hidden = true; $("log-sheet").hidden = true; document.body.classList.remove("sheet-open");
+    if (sheetReturn && sheetReturn.focus) sheetReturn.focus();
+  }
+  function updateLogLabel() {
+    const kind = (document.querySelector('input[name="kind"]:checked') || {}).value || "singles";
+    let min = +((document.querySelector('input[name="dur"]:checked') || {}).value ?? 90);
+    if (min === 0) { const h = parseFloat($("dur-other").value); min = isFinite(h) && h > 0 && h <= 10 ? Math.round(h * 60) : 0; }
+    $("log-play").textContent = min ? "Log " + dur(min) + " of " + (KIND_NAME[kind] || kind).toLowerCase() : "Log";
+    const sh = currentShoe(shoes), r = R();
+    $("log-note").textContent = [Object.keys(rackets).length < 2 && r ? "On " + r.name + "." : "", sh ? "Counts toward your " + sh.name + " too." : ""].filter(Boolean).join(" ");
+  }
+  $("log-close").onclick = closeLog; $("log-scrim").onclick = closeLog;
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("log-sheet").hidden) closeLog(); });
+  $("log-rackets").addEventListener("change", e => { selectRacket(e.target.value); updateLogLabel(); });
+  if (prefs.tab === "play" || prefs.tab === "account") prefs.tab = "today";
   showTab(prefs.tab, true);
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
@@ -1490,7 +1900,6 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
     current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
     renderAll();
-    if (!last) showResult(sampleTap(), true);
   }
   function start() {
     outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
@@ -1523,11 +1932,11 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
 
   // ---------- backup ----------
   $("export").onclick = async () => {
-    const name = "stringbed-backup-" + new Date().toLocaleDateString("en-CA") + ".json";
-    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 2, rackets, profile, shoes }, null, 2)], { type: "application/json" });
+    const name = "tennis-hub-backup-" + new Date().toLocaleDateString("en-CA") + ".json";
+    const blob = new Blob([JSON.stringify({ app: "tennis-hub", version: 2, rackets, profile, shoes }, null, 2)], { type: "application/json" });
     const file = new File([blob], name, { type: "application/json" });
     try {
-      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Stringbed backup" }); return; }
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Tennis Hub backup" }); return; }
     } catch (e) { if (e && e.name === "AbortError") return; }
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -1552,14 +1961,14 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       if (data.profile && typeof data.profile === "object") { profile = { level: data.profile.level || null, style: data.profile.style || null }; saveProfile(); }
       current = Object.keys(rackets)[0]; localSave(); renderAll();
       say("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
-    } catch { setStatus("That file isn't a Stringbed backup.", true); }
+    } catch { setStatus("That file isn't a Tennis Hub backup.", true); }
   };
 
   // ---------- accounts (Neon Auth through this app's /api/auth) ----------
   // Forms: "signin", "create", "forgot" (email me a reset link) and "reset" (choose a new password,
   // reached from the emailed link, which comes back here with ?token=...).
   let mode = "signin", creating = false;
-  const INTRO = "Sign in to keep your rackets and readings and use them on any device. Every player's rackets are their own.";
+  const INTRO = "Sign in to keep your rackets, sessions and courts and use them on any device. Every player's gear is their own.";
   function setForm(m) {
     mode = m; creating = m === "create";
     $("f-name").hidden = !creating; $("acct-name").required = creating;
@@ -1632,7 +2041,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       $("acct-pass").value = ""; setMode(false);
       start();
       loadTokens(); renderPush();
-      setStatus(wasCreating ? "Welcome, " + (user.name || user.email) + ". Add your first racket below." : "Signed in as " + (user.name || user.email) + ".");
+      showTab("today");
+      say(wasCreating ? "Welcome, " + (user.name || user.email) + ". Set up your racket to get started." : "Signed in as " + (user.name || user.email) + ".");
     } catch (e2) { err.textContent = e2 && e2.message && mode !== "signin" && mode !== "create" ? e2.message : "Can't reach the server. Check your connection and try again."; err.hidden = false; }
     finally { go.disabled = false; }
   });
@@ -1679,8 +2089,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     try { const reg = await navigator.serviceWorker.ready; sub = await reg.pushManager.getSubscription(); } catch {}
     const on = !!sub && Notification.permission === "granted";
     $("push-on").hidden = on; $("push-test").hidden = !on; $("push-off").hidden = !on;
-    if (Notification.permission === "denied") $("push-text").textContent = "Notifications are blocked for this app. Turn them on in Settings, then Notifications, then Stringbed.";
-    else $("push-text").textContent = on ? "Reminders are on for this phone: one at Restring soon and one at Restring now, checked every morning." : "Get a notification on this phone when a racket's strings are due: once at Restring soon and once at Restring now. The check runs every morning.";
+    if (Notification.permission === "denied") $("push-text").textContent = "Notifications are blocked for this app. Turn them on in your phone's Settings, then Notifications, then Tennis Hub.";
+    else $("push-text").textContent = on ? "Reminders are on for this phone. Strings and shoes are checked every morning." : "Get a notification on this phone when strings or shoes are due. The check runs every morning.";
   }
   $("push-on").onclick = async () => {
     pushErr(""); $("push-on").disabled = true;
@@ -1718,7 +2128,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   }
   function tokErr(msg) { $("tok-err").textContent = msg || ""; $("tok-err").hidden = !msg; }
   function renderTokens(list) {
-    const ol = $("tok-list"); ol.textContent = "";
+    const ol = $("tok-list"); ol.textContent = ""; $("tok-wrap").hidden = !(list || []).length;
     (list || []).forEach(t => {
       const li = document.createElement("li");
       const a = document.createElement("span"); a.className = "t";

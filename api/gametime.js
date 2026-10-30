@@ -25,7 +25,7 @@ export async function POST(request) {
     const store = db();
     await ensureSchema(store);
     const user = await userForToken(store, body && body.key, "gametime");
-    if (!user) return reply(request, { error: "This button's link isn't valid any more. Make a new GameTime button in Stringbed Meter." }, 401);
+    if (!user) return reply(request, { error: "This button's link isn't valid any more. Make a new GameTime button in Tennis Hub." }, 401);
     // The dining view on the club site asks for the member's coming court times.
     if (body.list === true) return reply(request, { bookings: await upcomingBookings(store, user.id) });
     // How far ahead GameTime opens booking, as the button found it.
@@ -33,7 +33,7 @@ export async function POST(request) {
     if (!Array.isArray(body.bookings)) return reply(request, await planInfo(store, user.id));
     const out = await importBookings(store, user.id, body);
     await logFinishedBookings(store, user.id);
-    const parts = [`${out.saved} booking${out.saved === 1 ? "" : "s"} in Stringbed Meter and your court calendar`];
+    const parts = [`${out.saved} booking${out.saved === 1 ? "" : "s"} in Tennis Hub and your court calendar`];
     if (out.cancelled) parts.push(`${out.cancelled} cancelled one${out.cancelled === 1 ? "" : "s"} removed`);
     return reply(request, { ...out, ...(await planInfo(store, user.id)), message: parts.join(", ") + "." });
   } catch (e) {
