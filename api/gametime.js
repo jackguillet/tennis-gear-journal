@@ -1,7 +1,7 @@
 import { db } from "../lib/db.js";
 import { ensureSchema } from "../lib/schema.js";
 import { userForToken } from "../lib/tokens.js";
-import { importBookings, upcomingBookings, planInfo, learnWindow } from "../lib/gametime.js";
+import { importBookings, upcomingBookings, planInfo, learnWindow, saveOpenCourts } from "../lib/gametime.js";
 import { logFinishedBookings } from "../lib/bookings.js";
 
 // POST /api/gametime  (text/plain JSON { key, days, bookings }, or { key, list: true })
@@ -18,7 +18,7 @@ const reply = (request, body, status = 200) =>
 
 export async function POST(request) {
   const raw = await request.text();
-  if (raw.length > 100000) return reply(request, { error: "Too much data." }, 413);
+  if (raw.length > 400000) return reply(request, { error: "Too much data." }, 413);
   let body;
   try { body = JSON.parse(raw); } catch { return reply(request, { error: "Not valid JSON." }, 400); }
   try {
@@ -30,6 +30,8 @@ export async function POST(request) {
     if (body.list === true) return reply(request, { bookings: await upcomingBookings(store, user.id) });
     // How far ahead GameTime opens booking, as the button found it.
     if (body.window) await learnWindow(store, user.id, body.window);
+    // Free slots for the coming days (no names), for the app and chat assistants.
+    if (body.open) return reply(request, { saved: await saveOpenCourts(store, user.id, body.open) });
     if (!Array.isArray(body.bookings)) return reply(request, await planInfo(store, user.id));
     const out = await importBookings(store, user.id, body);
     await logFinishedBookings(store, user.id);

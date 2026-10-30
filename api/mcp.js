@@ -15,7 +15,9 @@ const INSTRUCTIONS = "Tennis Hub (formerly Stringbed Meter) keeps a tennis playe
   + "When the person says they played (for example 'I played an hour of singles'), call log_play. "
   + "For questions about string wear or when to restring, call restring_advice. "
   + "When the person shares a court booking confirmation (for example a Seattle Tennis Club / GameTime email), call add_court_booking; "
-  + "finished bookings are logged as play automatically, so don't also call log_play for them. Pass dates in the person's local time.";
+  + "finished bookings are logged as play automatically, so don't also call log_play for them. Pass dates in the person's local time. "
+  + "To help book a court, use find_open_courts or court_booking_link and give the person the GameTime link: you can't finish a booking yourself, "
+  + "because GameTime makes the person complete it (it has a robot check). For weekly courts they want to claim, use add_regular_time and list_regular_times.";
 
 function secretFrom(request) {
   const url = new URL(request.url);
