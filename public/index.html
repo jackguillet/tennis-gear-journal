@@ -178,6 +178,7 @@ ol.plays .t.small { font-size: 13.5px; color: var(--muted); }
 ol.plays .k, ol.hist .k { font: 600 15px var(--f-body); }
 ol.hist .h { font: 400 13px var(--f-mono); color: var(--muted); }
 ol.plays button, ol.hist button, ol.tl button.x { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0; width: 40px; height: 40px; }
+ol.plays button.linkbtn { width: auto; height: auto; font: 600 14px var(--f-body); color: var(--court); padding: 8px 0; }
 ol.bookings li { grid-template-columns: 1fr auto 40px 40px; }
 ol.bookings .t b { font-weight: 600; }
 ol.bookings li.past { opacity: .6; }
@@ -413,7 +414,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
       <p class="small">The times you play every week. Your court calendar gets a "Book now" alert the minute GameTime opens each one.</p>
       <ol class="plays" id="plans"></ol>
       <details id="plan-sub" class="addform">
-        <summary>Add a regular time</summary>
+        <summary id="pl-sum">Add a regular time</summary>
         <div class="grid2">
           <div class="field"><label for="pl-dow">Day</label>
             <select id="pl-dow"><option value="1">Monday</option><option value="2">Tuesday</option><option value="3">Wednesday</option><option value="4">Thursday</option><option value="5">Friday</option><option value="6">Saturday</option><option value="0">Sunday</option></select>
@@ -430,8 +431,9 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
             <select id="pl-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option></select>
           </div>
         </div>
+        <div class="field" style="margin-top:10px"><label for="pl-backups">If it's taken, try (in order)</label><input id="pl-backups" type="text" maxlength="120" placeholder="e.g. 15, 14, 16"></div>
         <div class="field" style="margin-top:10px"><label for="pl-note">With (optional)</label><input id="pl-note" type="text" maxlength="120" placeholder="e.g. Marc"></div>
-        <div class="row-btns" style="margin-top:12px"><button class="btn primary" id="pl-save" type="button">Save regular time</button></div>
+        <div class="row-btns" style="margin-top:12px"><button class="btn primary" id="pl-save" type="button">Save regular time</button><button class="btn" id="pl-cancel" type="button" hidden>Cancel</button></div>
       </details>
       <details>
         <summary class="small">When GameTime opens booking</summary>
@@ -1441,10 +1443,18 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const li = document.createElement("li");
       const t = document.createElement("span"); t.className = "t";
       const w = document.createElement("b"); w.textContent = planTitle(p);
-      t.append(w, document.createTextNode(" · " + dur(p.min) + (p.note ? " · with " + p.note : "")));
+      t.append(w, document.createTextNode(" · " + dur(p.min) + (p.note ? " · with " + p.note : "") + (p.paused ? " · paused" : "")));
+      if (p.backups) { const s = document.createElement("small"); s.textContent = "If taken: " + p.backups; t.appendChild(s); }
+      if (p.paused) t.style.opacity = ".55";
+      const acts = document.createElement("span"); acts.style.display = "flex"; acts.style.gap = "12px";
+      const edit = document.createElement("button"); edit.type = "button"; edit.className = "linkbtn"; edit.textContent = "Edit";
+      edit.onclick = () => editPlan(p);
+      const pause = document.createElement("button"); pause.type = "button"; pause.className = "linkbtn"; pause.textContent = p.paused ? "Resume" : "Pause";
+      pause.onclick = () => { const q = { ...p, paused: !p.paused }; queue({ op: "plan.put", ...q }); applyLocal({ op: "plan.put", ...q }); localSave(); renderPlans(); };
+      acts.append(edit, pause);
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this regular time");
-      del.onclick = () => { queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); renderPlans(); };
-      li.append(t, del); ol.appendChild(li);
+      del.onclick = () => { if (!confirm("Remove " + planTitle(p) + "?")) return; queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); if (editing === p.id) editPlan(null); renderPlans(); };
+      li.append(t, acts, del); ol.appendChild(li);
     });
     const n = bookWindow.days;
     $("win-line").textContent = "GameTime opens each court time " + (n === 7 ? "exactly a week" : n + " days") + " before it ends, so a 2:15 to 3:30 pm court opens at 3:30 pm " +
@@ -1662,14 +1672,39 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     queue({ op: "booking.put", ...b }); applyLocal({ op: "booking.put", ...b }); localSave();
     bkErr(""); $("bk-court").value = ""; $("bk-add").open = false; renderBookings();
   };
+  // Editing a regular time fills the form; saving keeps its id, so it updates in place.
+  let editing = null;
+  function editPlan(p) {
+    editing = p ? p.id : null;
+    $("pl-sum").textContent = p ? "Change " + planTitle(p) : "Add a regular time";
+    $("pl-save").textContent = p ? "Save changes" : "Save regular time"; $("pl-cancel").hidden = !p;
+    $("pl-dow").value = p ? p.dow : 1; $("pl-time").value = p ? p.time : "18:00"; $("pl-len").value = p ? p.min : 75;
+    if (p && ![...$("pl-len").options].some(o => +o.value === p.min)) $("pl-len").add(new Option(dur(p.min), p.min));
+    $("pl-len").value = p ? p.min : 75;
+    $("pl-area").value = p ? p.area : "any"; $("pl-court").value = p ? p.court || "" : ""; $("pl-kind").value = p ? p.kind : "singles";
+    $("pl-backups").value = p ? p.backups || "" : ""; $("pl-note").value = p ? p.note || "" : "";
+    plErr("");
+    if (p) { $("plan-sub").open = true; $("plan-sub").scrollIntoView({ behavior: "smooth", block: "start" }); }
+  }
+  $("pl-cancel").onclick = () => editPlan(null);
   $("pl-save").onclick = () => {
     const tm = $("pl-time").value;
     if (!/^\d{2}:\d{2}/.test(tm)) { plErr("Pick a start time."); return; }
-    const p = { id: uid(), dow: +$("pl-dow").value, time: tm.slice(0, 5), min: +$("pl-len").value, area: $("pl-area").value,
-      court: $("pl-court").value.trim() || null, kind: $("pl-kind").value, note: $("pl-note").value.trim() || null };
+    const was = editing && plans.find(x => x.id === editing);
+    const p = { id: was ? was.id : uid(), dow: +$("pl-dow").value, time: tm.slice(0, 5), min: +$("pl-len").value, area: $("pl-area").value,
+      court: (courtList($("pl-court").value) || "").split(", ")[0] || null, kind: $("pl-kind").value, note: $("pl-note").value.trim() || null,
+      backups: courtList($("pl-backups").value), paused: was ? !!was.paused : false };
+    if (p.backups === false) { plErr("Backup courts: up to 6, like 15, 14, 16."); return; }
     queue({ op: "plan.put", ...p }); applyLocal({ op: "plan.put", ...p }); localSave();
-    plErr(""); $("pl-court").value = ""; $("pl-note").value = ""; renderPlans();
+    editPlan(null); renderPlans();
   };
+  // "15, ct 14" -> "Court 15, Court 14"; false when it can't be read.
+  function courtList(v) {
+    const list = String(v || "").split(/[,;/]+/).map(x => x.trim()).filter(Boolean)
+      .map(x => { const n = /^(?:court|ct\.?)?\s*(\d{1,2})$/i.exec(x); return n ? "Court " + Number(n[1]) : x; });
+    if (list.length > 6 || list.some(x => x.length > 20)) return false;
+    return list.length ? list.join(", ") : null;
+  }
   const saveWindow = () => {
     const days = Math.round(+$("win-days").value);
     if (!(days >= 1 && days <= 30)) { plErr("Booking opens 1 to 30 days before a court time ends."); return; }
