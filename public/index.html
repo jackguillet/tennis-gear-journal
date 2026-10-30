@@ -165,6 +165,21 @@ ul.factors li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; }
 ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: right; }
 .toast { position: fixed; z-index: 10; left: 50%; transform: translateX(-50%); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: min(528px, calc(100% - 32px)); display: flex; align-items: center; gap: 12px; justify-content: space-between; background: var(--ink); color: var(--bg); border-radius: 12px; padding: 10px 10px 10px 16px; font-size: 15px; box-shadow: 0 6px 24px rgba(0,0,0,.25); }
 .toast button { border: 0; background: transparent; color: var(--optic); font: 700 15px var(--f-body); padding: 10px 12px; min-height: 44px; cursor: pointer; text-transform: uppercase; letter-spacing: .05em; }
+.racket-bar { position: sticky; top: 0; z-index: 5; margin: 0 -4px; padding: calc(6px + env(safe-area-inset-top, 0px)) 4px 8px; background: var(--bg); }
+.racket-bar select { font-weight: 600; }
+.tab { display: flex; flex-direction: column; gap: 18px; }
+.tabbar { position: fixed; z-index: 8; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--panel); border-top: 1px solid var(--line); padding: 4px max(8px, env(safe-area-inset-right, 0px)) calc(4px + env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); }
+.tabbar button { border: 0; background: none; color: var(--muted); font: 600 12px var(--f-body); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0; min-height: 50px; cursor: pointer; }
+.tabbar svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tabbar button[aria-current="page"] { color: var(--court); }
+body.has-tabs { padding-bottom: calc(90px + env(safe-area-inset-bottom, 0px)); }
+body.has-tabs .toast { bottom: calc(74px + env(safe-area-inset-bottom, 0px)); }
+ul.overview { list-style: none; margin: 0; padding: 0; }
+ul.overview button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: center; text-align: left; border: 0; border-top: 1px solid var(--line); background: none; color: var(--ink); font: 16px var(--f-body); padding: 10px 0; cursor: pointer; }
+ul.overview li:first-child button { border-top: 0; }
+ul.overview .n { font-weight: 600; }
+ul.overview .d { grid-column: 1 / -1; font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; }
+ul.overview button[aria-current="true"] .n { color: var(--court); }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 </style>
 </head>
@@ -194,11 +209,14 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
   </section>
 
   <div id="app" class="app" hidden>
-  <div class="meter">
+  <div class="racket-bar" id="racket-bar">
     <div class="racket-row">
       <select id="racket" aria-label="Racket"></select>
-      <span id="sample-chip" class="chip" hidden>Sample tap</span>
     </div>
+  </div>
+  <div class="tab" id="tab-measure" data-tab="measure">
+  <div class="meter">
+    <div class="racket-row"><span id="sample-chip" class="chip" hidden>Sample tap</span></div>
     <div class="readout">
       <div class="big" id="big">--<span class="u" id="big-u">kg</span></div>
       <div class="hz" id="hz">-- Hz</div>
@@ -214,21 +232,31 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     </div>
   </div>
 
-  <section class="card" aria-labelledby="h-restring" id="restring">
-    <div class="restring-head"><h2 id="h-restring">Restring</h2><span class="chip" id="rs-chip"></span></div>
-    <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
-    <div id="rs-line"></div>
-    <div class="row-btns">
-      <button class="btn" id="rs-broke" type="button">Strings broke</button>
-      <button class="btn" id="rs-quick" type="button">Record a restring</button>
+  <section class="card" aria-labelledby="h-hist">
+    <h2 id="h-hist">History</h2>
+    <canvas id="trend" aria-label="Tension over time"></canvas>
+    <ol class="hist" id="hist"></ol>
+  </section>
+  <section class="card" aria-labelledby="h-cal">
+    <h2 id="h-cal">Calibrate</h2>
+    <p class="small" id="cal-text">Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.</p>
+    <div class="grid2">
+      <div class="field"><label for="cal-val" id="cal-label">Strung at (kg)</label><input id="cal-val" type="number" step="0.5" inputmode="decimal"></div>
+      <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
     </div>
+    <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
+  </section>
+  <section class="card">
     <details>
-      <summary class="small">What this is based on</summary>
-      <ul class="factors" id="rs-factors"></ul>
-      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate. Each time you press Strings broke, the break estimate moves toward how long strings really last for you.</p>
+      <summary>How it works</summary>
+      <p>A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. Tension rises with the square of that pitch, the head area and the weight per metre of the string (its gauge and material). The app uses the drum-skin formula for an oval head, which Cross and Bower checked against a load cell inside a strung racket and found within a few percent.</p>
+      <p>That gives the tension left in the strung racket, shown under the big number as "in the bed". It is 30–40% lower than the tension set on the stringing machine, even straight after stringing, because the strings relax and lose tension through the grommets. Apps like RacquetTune show this bed number. The big number turns it back into stringing-machine terms using that typical drop, so it can be compared with what you asked your stringer for. Calibrate right after a restring and the app learns your stringer's real drop. Either way the trend for one racket is reliable: use it to see when to restring.</p>
+      <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm, a knuckle or the edge of another racket, and lift off at once: anything left on the strings stops the ring. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
+      <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
     </details>
   </section>
-
+  </div>
+  <div class="tab" id="tab-play" data-tab="play" hidden>
   <section class="card" aria-labelledby="h-play">
     <h2 id="h-play">Play on these strings</h2>
     <div class="hours"><div class="num" id="hours-num">0<span class="u">h</span></div><div class="small" id="hours-line"></div></div>
@@ -247,7 +275,6 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     <ol class="plays" id="plays"></ol>
     <button class="linkbtn" id="plays-more" type="button" hidden>Show older sessions</button>
   </section>
-
   <section class="card" aria-labelledby="h-courts" id="courts" hidden>
     <h2 id="h-courts">Court bookings</h2>
     <p class="small" id="courts-line">Add the courts you book at the club. Each one goes in your calendar, and once it ends the time is logged on your racket.</p>
@@ -326,13 +353,26 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <p class="small err-text" id="gt-err" hidden></p>
     </details>
   </section>
-
-  <section class="card" aria-labelledby="h-hist">
-    <h2 id="h-hist">History</h2>
-    <canvas id="trend" aria-label="Tension over time"></canvas>
-    <ol class="hist" id="hist"></ol>
+  </div>
+  <div class="tab" id="tab-racket" data-tab="racket" hidden>
+  <section class="card" aria-labelledby="h-all" id="overview-card">
+    <h2 id="h-all">All your gear</h2>
+    <ul class="overview" id="ov-list"></ul>
   </section>
-
+  <section class="card" aria-labelledby="h-restring" id="restring">
+    <div class="restring-head"><h2 id="h-restring">Restring</h2><span class="chip" id="rs-chip"></span></div>
+    <div class="wear" id="rs-bar" role="meter" aria-label="String life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+    <div id="rs-line"></div>
+    <div class="row-btns">
+      <button class="btn" id="rs-broke" type="button">Strings broke</button>
+      <button class="btn" id="rs-quick" type="button">Record a restring</button>
+    </div>
+    <details>
+      <summary class="small">What this is based on</summary>
+      <ul class="factors" id="rs-factors"></ul>
+      <p>The estimate takes the largest of four limits: when your string type goes dead for a player of your level and style, when it is likely to break (gauge, pattern, head size, tension and spin all change how fast strings notch), how much tension your readings show it has lost since stringing, and how old the strings are. Hours are weighted by type of play: drills and ball machine wear strings faster than doubles. Set Your game below and save a reading right after each restring for the best estimate. Each time you press Strings broke, the break estimate moves toward how long strings really last for you.</p>
+    </details>
+  </section>
   <section class="card" aria-labelledby="h-jobs" id="jobs-card">
     <h2 id="h-jobs">String history</h2>
     <ol class="plays" id="jobs"></ol>
@@ -342,7 +382,6 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <ul class="factors" id="by-string-list"></ul>
     </div>
   </section>
-
   <section class="card" aria-labelledby="h-set">
     <h2 id="h-set">Racket</h2>
     <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" maxlength="40"></div>
@@ -409,15 +448,34 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <button class="btn danger" id="del-yes" type="button">Delete</button>
       <button class="btn" id="del-no" type="button">Keep</button>
     </div>
-
-    <h2>Calibrate</h2>
-    <p class="small" id="cal-text">Right after a fresh stringing, tap the racket, then enter the tension you asked the stringer for. Readings for this racket are then scaled to match.</p>
-    <div class="grid2">
-      <div class="field"><label for="cal-val" id="cal-label">Strung at (kg)</label><input id="cal-val" type="number" step="0.5" inputmode="decimal"></div>
-      <div class="field" style="justify-content:flex-end"><button class="btn" id="cal-go" type="button" disabled>Calibrate on last tap</button></div>
+  </section>
+  <section class="card" aria-labelledby="h-shoes" id="shoes-card">
+    <div class="restring-head"><h2 id="h-shoes">Shoes</h2><span class="chip" id="sh-chip" hidden></span></div>
+    <div id="sh-now" hidden>
+      <div class="hours"><div class="num" id="sh-hours">0<span class="u">h</span></div><div class="small" id="sh-line"></div></div>
+      <div class="wear" id="sh-bar" role="meter" aria-label="Shoe life used" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+      <div class="grid2" style="margin-top:10px">
+        <div class="field"><label for="sh-life">Expected life (h)</label><input id="sh-life" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
+      </div>
     </div>
-    <div class="row-btns"><button class="btn" id="cal-reset" type="button" hidden>Remove calibration</button></div>
-    <h2>Your game</h2>
+    <p class="empty" id="sh-empty">Add the pair you play in. Every session you log, on any racket, counts toward it, and you'll see when the outsoles are due.</p>
+    <ol class="plays" id="sh-list"></ol>
+    <div class="row-btns"><button class="btn" id="sh-new" type="button">Add a new pair</button></div>
+    <form id="sh-form" class="account-form" hidden>
+      <p class="small" id="sh-form-note">The pair you wear now is retired on the day the new one goes into use.</p>
+      <div class="grid2">
+        <div class="field"><label for="sh-name">Shoes</label><input id="sh-name" type="text" maxlength="60" placeholder="e.g. NB 996v6 2E" required></div>
+        <div class="field"><label for="sh-from">In use from</label><input id="sh-from" type="date" required></div>
+        <div class="field"><label for="sh-newlife">Expected life (h)</label><input id="sh-newlife" type="number" min="10" max="500" step="5" inputmode="numeric"></div>
+      </div>
+      <p class="small err-text" id="sh-err" role="alert" hidden></p>
+      <div class="row-btns"><button class="btn primary" type="submit">Save pair</button><button class="btn" id="sh-cancel" type="button">Cancel</button></div>
+    </form>
+  </section>
+  </div>
+  <div class="tab" id="tab-account" data-tab="account" hidden>
+  <section class="card" aria-labelledby="h-game">
+    <h2 id="h-game">Your game</h2>
     <p class="small">Your level and style are saved with your account. Heavy spin wears through strings much faster than flat hitting, so this helps you read your hours.</p>
     <div class="grid2">
       <div class="field"><label for="p-level">Level (NTRP)</label>
@@ -447,7 +505,9 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
         </select>
       </div>
     </div>
-    <h2>Restring reminders</h2>
+  </section>
+  <section class="card" aria-labelledby="h-rem">
+    <h2 id="h-rem">Restring reminders</h2>
     <p class="small" id="push-text">Get a notification on this phone when a racket's strings are due: once at Restring soon and once at Restring now. The check runs every morning.</p>
     <div class="row-btns">
       <button class="btn" id="push-on" type="button">Turn on reminders</button>
@@ -455,7 +515,26 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <button class="btn" id="push-off" type="button" hidden>Turn off on this phone</button>
     </div>
     <p class="small err-text" id="push-err" hidden></p>
-    <h2>Chat assistant</h2>
+  </section>
+  <section class="card" aria-labelledby="h-qlog">
+    <h2 id="h-qlog">Quick log</h2>
+    <p class="small">Log a session in one tap after a match, without opening the app: a private link for an iPhone Shortcut or a Home Screen button. It can only add (and undo) play sessions.</p>
+    <div class="row-btns"><button class="btn" id="ql-new" type="button">Make my quick-log link</button></div>
+    <div class="field" id="ql-show" hidden>
+      <label for="ql-url">Your quick-log link (shown once)</label>
+      <input id="ql-url" type="text" readonly>
+      <div class="row-btns"><button class="btn" id="ql-copy" type="button">Copy link</button><a class="btn" id="ql-open" target="_blank" rel="noopener" style="text-decoration:none">Open the page</a></div>
+    </div>
+    <p class="small err-text" id="ql-err" hidden></p>
+    <details>
+      <summary class="small">Set up the one-tap Shortcut</summary>
+      <p>In the Shortcuts app, tap +, then add <b>Get Contents of URL</b>. Paste your quick-log link as the URL, tap the arrow, set Method to <b>POST</b> and Request Body to <b>JSON</b>, and add two fields: <b>kind</b> (Text) = <code>singles</code> and <b>minutes</b> (Number) = <code>90</code>. Then add <b>Show Result</b>. Name it "Log singles" and add it to your Home Screen or say "Hey Siri, log singles".</p>
+      <p>Other kinds: doubles, hitting, drills, ball_machine, serves. Add a <b>racket</b> field (for example <code>v8</code>) to pick a racket; without it the one you used last is chosen. For a choice each time, use <b>Choose from Menu</b> with one Get Contents of URL per option.</p>
+      <p>Simpler: open the page from the link above in Safari, tap Share, then <b>Add to Home Screen</b>. It opens to big buttons for type and time.</p>
+    </details>
+  </section>
+  <section class="card" aria-labelledby="h-chat">
+    <h2 id="h-chat">Chat assistant</h2>
     <p class="small">Log play by chatting, for example "I played an hour of singles". Make a private link, then in Claude open Settings, then Connectors, then Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your rackets, so keep it to yourself.</p>
     <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
     <div class="field" id="tok-show" hidden>
@@ -465,7 +544,9 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
     </div>
     <p class="small err-text" id="tok-err" hidden></p>
     <ol class="plays" id="tok-list"></ol>
-    <h2>Account and backup</h2>
+  </section>
+  <section class="card" aria-labelledby="h-acct">
+    <h2 id="h-acct">Account and backup</h2>
     <p class="small" id="who"></p>
     <p class="small" id="store-note">Rackets and readings are saved on this device.</p>
     <div class="row-btns">
@@ -474,23 +555,21 @@ ul.factors b { font: 500 13px var(--f-mono); color: var(--ink); text-align: righ
       <label class="btn" for="import">Restore from a file<input id="import" type="file" accept="application/json,.json"></label>
     </div>
   </section>
-
-  <section class="card">
-    <details>
-      <summary>How it works</summary>
-      <p>A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. Tension rises with the square of that pitch, the head area and the weight per metre of the string (its gauge and material). The app uses the drum-skin formula for an oval head, which Cross and Bower checked against a load cell inside a strung racket and found within a few percent.</p>
-      <p>That gives the tension left in the strung racket, shown under the big number as "in the bed". It is 30–40% lower than the tension set on the stringing machine, even straight after stringing, because the strings relax and lose tension through the grommets. Apps like RacquetTune show this bed number. The big number turns it back into stringing-machine terms using that typical drop, so it can be compared with what you asked your stringer for. Calibrate right after a restring and the app learns your stringer's real drop. Either way the trend for one racket is reliable: use it to see when to restring.</p>
-      <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm, a knuckle or the edge of another racket, and lift off at once: anything left on the strings stops the ring. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
-      <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
-    </details>
-  </section>
+  </div>
   </div>
 </div>
+<nav class="tabbar" id="tabbar" hidden aria-label="Sections">
+  <button type="button" data-go="measure" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg>Measure</button>
+  <button type="button" data-go="play"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6c3.5 3.5 3.5 9.3 0 12.8M18.4 5.6c-3.5 3.5-3.5 9.3 0 12.8"/></svg>Play</button>
+  <button type="button" data-go="racket"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="10" cy="9" rx="6" ry="7" transform="rotate(-40 10 9)"/><path d="M14.5 13.5l6 7M6.5 5.5l7 7M5 9.5l5.5-5.5M9 13.5l5.5-5.5"/></svg>Gear</button>
+  <button type="button" data-go="account"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/></svg>Account</button>
+</nav>
 
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle } from "./courts.js";
+import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
 import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings } from "./stringjobs.js";
 (() => {
   "use strict";
@@ -519,12 +598,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   function localLoad() { return lsGet(key("rackets"), {}); }
   let profile = { level: null, style: null };
   let bookings = [];      // court bookings: upcoming and the last two weeks
+  let shoes = [];         // pairs of tennis shoes, newest last
   let plans = [];         // regular weekly court times
   let bookWindow = { days: 7, time: "07:00", set: false }; // when the club opens booking for a day
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("shoes"), shoes); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -545,10 +625,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // whether or not the delete already reached the server.
   let undoTimer = null, undoFn = null;
   function offerUndo(msg, fn) {
-    $("toast-msg").textContent = msg; $("toast").hidden = false; undoFn = fn;
+    $("toast-msg").textContent = msg; $("toast").hidden = false; undoFn = fn; $("toast-undo").hidden = !fn;
     clearTimeout(undoTimer); undoTimer = setTimeout(hideUndo, 8000);
   }
   function hideUndo() { $("toast").hidden = true; undoFn = null; }
+  // A short note in the same bar, for results on tabs where the big status line isn't in view.
+  const say = msg => offerUndo(msg, null);
   function undoDelete(deletes, readds) {
     outbox = outbox.filter(o => !deletes.includes(o));
     readds.forEach(o => queue(o));
@@ -612,6 +694,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     else if (op.op === "plan.delete") plans = plans.filter(x => x.id !== op.id);
     else if (op.op === "window.put") bookWindow = { days: op.days, time: op.time, set: true };
     else if (op.op === "racket.delete") delete rackets[op.id];
+    else if (op.op === "shoe.put") shoes = shoes.filter(x => x.id !== op.id).concat([{ id: op.id, ...op.data }]);
+    else if (op.op === "shoe.delete") shoes = shoes.filter(x => x.id !== op.id);
     else if (op.op === "reading.add") { const r = rackets[op.racketId]; if (r && !r.readings.some(x => x.id === op.id)) r.readings.push({ id: op.id, t: op.t, hz: op.hz, ...(op.s ? { s: op.s } : {}) }); }
     else if (op.op === "reading.delete") Object.values(rackets).forEach(r => { r.readings = r.readings.filter(x => x.id !== op.id); });
   }
@@ -650,6 +734,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       rackets = body.rackets || {};
       if (body.profile) profile = body.profile;
       if (body.bookings) bookings = body.bookings;
+      if (body.shoes) shoes = body.shoes;
       if (body.plans) plans = body.plans;
       if (body.window) bookWindow = body.window;
       outbox.forEach(applyLocal); // changes made while this request was out
@@ -669,7 +754,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   function renderAfterSync() {
     // Don't overwrite a field the person is typing in.
     const editing = document.activeElement && document.activeElement.closest && document.activeElement.closest("section.card") && /INPUT|SELECT/.test(document.activeElement.tagName);
-    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings(); renderJobs();
+    renderSelect(); if (!editing) { renderSettings(); renderProfile(); } renderReadout(); renderHistory(); renderPlays(); renderBookings(); renderJobs(); renderShoes(); renderOverview();
   }
   function ago(t) {
     const m = Math.round((Date.now() - t) / 60000);
@@ -679,6 +764,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const chip = $("sync-chip"), note = $("store-note"), n = outbox.length;
     $("account").hidden = !!user && signedIn !== false && !resetToken;
     $("app").hidden = !user;
+    $("tabbar").hidden = !user; document.body.classList.toggle("has-tabs", !!user);
     $("signout").hidden = !user;
     $("who").textContent = user ? "Signed in as " + (user.name ? user.name + " (" + user.email + ")" : user.email) + "." : "";
     if (user && signedIn === false) { $("h-account").textContent = "Sign in again"; $("account-intro").textContent = "Your session ended. Sign in again to sync. Until then, changes stay on this device."; if (!$("acct-email").value) $("acct-email").value = user.email || ""; }
@@ -827,7 +913,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // The day follows today (the app can sit open in the background for days) unless the person picked one.
     if (!$("play-date").value || !playDatePicked) $("play-date").value = today();
     $("play-date").max = today();
-    renderRestring(); renderJobs();
+    renderRestring(); renderJobs(); renderShoes(); renderOverview();
   }
   let showAllPlays = false, playDatePicked = false;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
@@ -885,7 +971,103 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       li.append(b, sp); ul.appendChild(li);
     });
   }
-  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); renderJobs(); }
+  // ---------- shoes ----------
+  const shoeData = x => ({ name: x.name, startedOn: x.startedOn, retiredOn: x.retiredOn || null, lifeHours: x.lifeHours || DEFAULT_LIFE });
+  function putShoe(x) { queue({ op: "shoe.put", id: x.id, data: shoeData(x) }); }
+  // A new pair's expected life: what your retired pairs actually lasted, once there are some.
+  function typicalLife() {
+    const done = shoes.filter(x => x.retiredOn).map(x => shoeWear(x, rackets).hours).filter(h => h >= 10);
+    return done.length ? Math.round(done.reduce((a, b) => a + b, 0) / done.length / 5) * 5 : DEFAULT_LIFE;
+  }
+  function renderShoes() {
+    const cur = currentShoe(shoes), short = d => new Date(d + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: d.slice(0, 4) === today().slice(0, 4) ? undefined : "numeric" });
+    $("sh-now").hidden = !cur; $("sh-chip").hidden = !cur; $("sh-empty").hidden = shoes.length > 0;
+    if (cur) {
+      const w = shoeWear(cur, rackets);
+      $("sh-hours").firstChild.nodeValue = w.hours;
+      $("sh-line").textContent = cur.name + ", since " + short(cur.startedOn) + (w.status === "now" ? ". Past their expected life: check the outsole at the big toe." : ". About " + w.left + " h left of " + w.life + ".");
+      $("sh-chip").textContent = w.label; $("sh-chip").className = "chip " + ({ good: "good", soon: "warn", now: "bad" }[w.status] || "");
+      const bar = $("sh-bar"); bar.className = "wear " + (w.status === "good" ? "" : w.status); bar.firstChild.style.width = Math.min(100, Math.round(w.used * 100)) + "%"; bar.setAttribute("aria-valuenow", Math.min(100, Math.round(w.used * 100)));
+      if (document.activeElement !== $("sh-life")) $("sh-life").value = w.life;
+    }
+    const list = $("sh-list"); list.textContent = "";
+    shoes.filter(x => x !== cur).sort((a, b) => b.startedOn.localeCompare(a.startedOn)).forEach(x => {
+      const li = document.createElement("li"), t = document.createElement("span"), k = document.createElement("span"), del = document.createElement("button");
+      t.className = "t"; t.textContent = x.name + ": " + short(x.startedOn) + " – " + (x.retiredOn ? short(x.retiredOn) : "now");
+      k.className = "k"; k.textContent = shoeWear(x, rackets).hours + " h";
+      del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this pair");
+      del.onclick = () => removeShoe(x);
+      li.append(t, k, del); list.appendChild(li);
+    });
+    if (cur) {
+      // The pair in use can be removed too (for a mistake), from the list's end.
+      const li = document.createElement("li"), t = document.createElement("span"), k = document.createElement("span"), del = document.createElement("button");
+      t.className = "t"; t.textContent = "Remove " + cur.name + " (added by mistake)"; k.textContent = "";
+      del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove the pair in use");
+      del.onclick = () => removeShoe(cur);
+      li.append(t, k, del); list.appendChild(li);
+    }
+  }
+  function removeShoe(x) {
+    shoes = shoes.filter(y => y !== x);
+    const del = queue({ op: "shoe.delete", id: x.id }); renderShoes(); renderOverview();
+    offerUndo(x.name + " removed.", () => { shoes.push(x); undoDelete([del], [{ op: "shoe.put", id: x.id, data: shoeData(x) }]); renderShoes(); renderOverview(); });
+  }
+  $("sh-life").addEventListener("change", e => {
+    const cur = currentShoe(shoes), v = parseInt(e.target.value, 10); if (!cur) return;
+    cur.lifeHours = isFinite(v) ? Math.min(500, Math.max(10, v)) : DEFAULT_LIFE; putShoe(cur); renderShoes(); renderOverview();
+  });
+  $("sh-new").onclick = () => {
+    $("sh-name").value = ""; $("sh-from").value = today(); $("sh-from").max = today(); $("sh-newlife").value = typicalLife();
+    $("sh-form-note").hidden = !currentShoe(shoes); $("sh-err").hidden = true;
+    $("sh-form").hidden = false; $("sh-new").hidden = true; $("sh-name").focus();
+  };
+  const closeShoe = () => { $("sh-form").hidden = true; $("sh-new").hidden = false; };
+  $("sh-cancel").onclick = closeShoe;
+  $("sh-form").addEventListener("submit", e => {
+    e.preventDefault();
+    const err = m => { $("sh-err").textContent = m; $("sh-err").hidden = false; };
+    const name = $("sh-name").value.trim(), from = $("sh-from").value || today(), life = parseInt($("sh-newlife").value, 10);
+    if (!name) return err("Name the shoes, for example NB 996v6 2E.");
+    if (from > today()) return err("That day hasn't happened yet.");
+    const cur = currentShoe(shoes);
+    if (cur && from < cur.startedOn) return err("That's before " + cur.name + " went into use (" + cur.startedOn + ").");
+    if (cur) { cur.retiredOn = from; putShoe(cur); }
+    const x = { id: uid(), name, startedOn: from, retiredOn: null, lifeHours: isFinite(life) ? Math.min(500, Math.max(10, life)) : DEFAULT_LIFE };
+    shoes.push(x); putShoe(x); closeShoe(); renderShoes(); renderOverview();
+    say(cur ? cur.name + " retired after " + shoeWear(cur, rackets).hours + " h. " + name + " are in use." : name + " added. Every session you log counts toward them.");
+  });
+
+  // ---------- all rackets ----------
+  function renderOverview() {
+    const ul = $("ov-list"); if (!ul) return; ul.textContent = "";
+    const personal = personalBreak(rackets, profile), chipClass = { good: "good", soon: "warn", now: "bad" };
+    const row = (name, detail, chip, cls, onclick, isCurrent) => {
+      const li = document.createElement("li"), b = document.createElement("button"), n = document.createElement("span"), c = document.createElement("span"), d = document.createElement("span");
+      b.type = "button"; n.className = "n"; n.textContent = name; c.className = "chip " + (cls || ""); c.textContent = chip; d.className = "d"; d.textContent = detail;
+      if (isCurrent) b.setAttribute("aria-current", "true");
+      b.onclick = onclick; b.append(n, c, d); li.appendChild(b); ul.appendChild(li);
+    };
+    Object.entries(rackets).sort((a, b) => a[1].name.localeCompare(b[1].name)).forEach(([id, r]) => {
+      const a = restringAdvice(r, profile, today(), personal), lastJob = (r.jobs || []).slice().sort((x, y) => x.to.localeCompare(y.to)).pop();
+      const broken = !r.strungOn && lastJob && lastJob.reason === "broke";
+      const lastR = r.readings.slice().sort((x, y) => y.t - x.t)[0];
+      const bits = [hrs(onTheseStrings(r).reduce((s2, p) => s2 + p.min, 0)) + " h on strings"];
+      if (r.stringName) bits.push(r.stringName);
+      if (lastR) bits.push("last " + fmt(readingKg(lastR, r)) + " " + unit);
+      if (a.restring_by && a.status !== "now" && !broken) bits.push("restring by " + new Date(a.restring_by + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" }));
+      row(r.name, bits.join(" · "), broken ? "Broken" : a.label, broken ? "bad" : chipClass[a.status], () => {
+        current = id; prefs.racket = id; savePrefs(); showAllPlays = false; $("rs-form").hidden = true; $("rs-new").hidden = false;
+        renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs();
+        $("restring").scrollIntoView({ behavior: "smooth", block: "start" });
+      }, id === current);
+    });
+    const cur = currentShoe(shoes);
+    if (cur) { const w = shoeWear(cur, rackets); row(cur.name, w.hours + " of about " + w.life + " h", w.label, chipClass[w.status], () => $("shoes-card").scrollIntoView({ behavior: "smooth", block: "start" })); }
+    $("overview-card").hidden = ul.children.length < 2;
+  }
+
+  function renderAll() { renderSelect(); renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderProfile(); renderBookings(); renderJobs(); renderShoes(); renderOverview(); }
 
   // ---------- court bookings ----------
   const clubTz = () => DEFAULT_TZ;
@@ -991,7 +1173,15 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     [hi - pad, lo + pad].forEach(v => { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(w - 10, Y(v)); g.stroke(); g.fillText(v.toFixed(1), L - 6, Y(v) + 4); });
     g.textAlign = "left"; g.fillText(new Date(t0).toLocaleDateString(undefined, { month: "short", day: "numeric" }), L, h - 2);
     g.textAlign = "right"; g.fillText(new Date(t1).toLocaleDateString(undefined, { month: "short", day: "numeric" }), w - 10, h - 2);
-    g.beginPath(); rs.forEach((x, i) => i ? g.lineTo(X(x.t), Y(ys[i])) : g.moveTo(X(x.t), Y(ys[i])));
+    // Restrings: a dashed line where each new set went in, and the trend starts over there
+    // (joining two sets of strings would draw a fake jump).
+    const changes = [...new Set([...(r.jobs || []).map(j => j.to), ...(r.jobs || []).map(j => j.from), r.strungOn].filter(Boolean))]
+      .map(d => new Date(d + "T00:00:00").getTime()).filter(t => t > t0 && t <= t1).sort((a, b) => a - b);
+    g.save(); g.setLineDash([3, 4]); g.strokeStyle = css("--warn"); g.fillStyle = css("--warn"); g.textAlign = "left"; g.lineWidth = 1;
+    changes.forEach(t => { g.beginPath(); g.moveTo(X(t), 4); g.lineTo(X(t), h - B - 6); g.stroke(); g.fillText("restrung", Math.min(X(t) + 3, w - 60), 12); });
+    g.restore();
+    const setOf = t => changes.filter(c => c <= t).length;
+    g.beginPath(); rs.forEach((x, i) => i && setOf(x.t) === setOf(rs[i - 1].t) ? g.lineTo(X(x.t), Y(ys[i])) : g.moveTo(X(x.t), Y(ys[i])));
     g.strokeStyle = css("--court"); g.lineWidth = 2; g.stroke();
     g.fillStyle = css("--court");
     rs.forEach((x, i) => { g.beginPath(); g.arc(X(x.t), Y(ys[i]), i === rs.length - 1 ? 4.5 : 2.5, 0, Math.PI * 2); g.fill(); });
@@ -1102,7 +1292,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     current = e.target.value; prefs.racket = current; savePrefs(); showAllPlays = false;
     // A tap belongs to the racket it was made on: start fresh so it can't be saved to (or calibrate) this one.
     if (last && !lastIsSample) { last = null; liveTaps = []; setStatus("Tap " + R().name + " to measure it."); }
-    renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs(); $("rs-form").hidden = true;
+    renderSettings(); renderReadout(); renderHistory(); renderPlays(); renderJobs(); renderOverview(); $("rs-form").hidden = true;
   };
   $("kind-picks").addEventListener("change", e => { prefs.kind = e.target.value; savePrefs(); });
   $("dur-picks").addEventListener("change", e => {
@@ -1225,7 +1415,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     setStatus("Calibrated. This tap now reads " + fmt(kg) + " " + unit + " and is saved as the starting point for tension loss.");
   };
   $("cal-reset").onclick = () => { const r = R(); r.calib = 1; r.calibAt = null; persist(current); renderAll(); setStatus("Calibration removed. Readings are estimates again."); };
-  const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); renderJobs(); };
+  const setUnit = u => { unit = u; prefs.unit = u; savePrefs(); renderSettings(); renderReadout(); renderHistory(); renderJobs(); renderOverview(); };
   // ---------- restring ----------
   $("rs-broke").onclick = () => {
     const r = R(), id = current; if (!r || !r.strungOn) return;
@@ -1270,10 +1460,24 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (job) addJob(current, job);
     Object.assign(r, { strungOn: d, stringName: $("rs-name").value.trim() || null, gauge: g, material: $("rs-mat").value, strungKg: kg });
     persist(current); closeRestring(); renderAll();
-    setStatus((job ? "Saved the old strings to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "") + "Tap the new strings now and press Calibrate on last tap for the best readings.");
-    $("status").scrollIntoView({ block: "center", behavior: "smooth" });
+    say((job ? "Old strings saved to String history (" + hrs(minutesBetween(r.plays, job.from, job.to)) + " h). " : "Restring saved. ") + "Tap the new strings on Measure and calibrate for the best readings.");
   });
   $("toast-undo").onclick = () => { const f = undoFn; hideUndo(); if (f) f(); };
+
+  // ---------- tabs ----------
+  const TABS = ["measure", "play", "racket", "account"];
+  function showTab(t, keepScroll) {
+    if (!TABS.includes(t)) t = "measure";
+    prefs.tab = t; savePrefs();
+    document.querySelectorAll(".tab").forEach(el => { el.hidden = el.dataset.tab !== t; });
+    $("racket-bar").hidden = t === "account";
+    document.querySelectorAll("#tabbar button").forEach(b => { if (b.dataset.go === t) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+    if (!keepScroll) window.scrollTo(0, 0);
+    if (t === "measure") { drawSpectrum(); drawTrend(); }
+    if (t !== "measure" && live) stopListening();
+  }
+  document.querySelectorAll("#tabbar button").forEach(b => { b.onclick = () => showTab(b.dataset.go); });
+  showTab(prefs.tab, true);
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
   let rt; addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { drawSpectrum(); drawTrend(); }, 100); });
@@ -1292,6 +1496,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     outbox = lsGet(key("outbox"), []); lastSync = lsGet(key("last-sync"), 0); refused = null; signedIn = null;
     profile = lsGet(key("profile"), { level: null, style: null });
     bookings = lsGet(key("bookings"), []);
+    shoes = lsGet(key("shoes"), []);
     plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, time: "07:00", set: false });
     if (user) adoptOldCopy();
     boot(localLoad());
@@ -1319,7 +1524,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // ---------- backup ----------
   $("export").onclick = async () => {
     const name = "stringbed-backup-" + new Date().toLocaleDateString("en-CA") + ".json";
-    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 2, rackets, profile }, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify({ app: "stringbed-meter", version: 2, rackets, profile, shoes }, null, 2)], { type: "application/json" });
     const file = new File([blob], name, { type: "application/json" });
     try {
       if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Stringbed backup" }); return; }
@@ -1343,9 +1548,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
         readings.forEach(x => { if (rackets[id].readings.some(y => y.id && y.id === x.id)) return; addReading(id, { id: x.id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }); });
         plays.forEach(p => { if (p && p.d && p.min && p.kind) addPlay(id, { id: p.id, d: p.d, min: p.min, kind: p.kind }); });
       });
+      if (Array.isArray(data.shoes)) data.shoes.forEach(x => { if (x && x.id && x.name && x.startedOn) { shoes = shoes.filter(y => y.id !== x.id).concat([x]); putShoe(x); } });
       if (data.profile && typeof data.profile === "object") { profile = { level: data.profile.level || null, style: data.profile.style || null }; saveProfile(); }
       current = Object.keys(rackets)[0]; localSave(); renderAll();
-      setStatus("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
+      say("Restored " + Object.keys(rackets).length + " rackets from " + f.name + ".");
     } catch { setStatus("That file isn't a Stringbed backup.", true); }
   };
 
@@ -1442,7 +1648,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // Reminders on this phone belong to the player signing out.
     try { const reg = pushSupported() && await navigator.serviceWorker.ready, sub = reg && await reg.pushManager.getSubscription(); if (sub) { await pushCall("DELETE", { endpoint: sub.endpoint }); await sub.unsubscribe(); } } catch {}
     try { await authCall("sign-out", {}); } catch {}
-    try { ["rackets", "outbox", "last-sync", "refused", "profile"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
+    try { ["rackets", "outbox", "last-sync", "refused", "profile", "shoes"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
     user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
     $("tok-list").textContent = ""; $("tok-show").hidden = true; $("tok-url").value = "";
     $("h-account").textContent = "Sign in"; $("account-intro").textContent = INTRO;
@@ -1530,6 +1736,20 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     if (!user || !canSync() || !navigator.onLine) return;
     try { renderTokens((await tokensCall("GET")).tokens); tokErr(""); } catch {}
   }
+  $("ql-new").onclick = async () => {
+    $("ql-err").hidden = true; $("ql-new").disabled = true;
+    try {
+      const out = await tokensCall("POST", { label: "Quick log", timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, scope: "log" });
+      const url = new URL("api/log/" + out.token.secret, location.href).href;
+      $("ql-url").value = url; $("ql-open").href = url; $("ql-show").hidden = false; $("ql-url").select();
+      renderTokens(out.tokens);
+    } catch (e) { $("ql-err").textContent = navigator.onLine ? e.message : "You're offline. Connect to make a link."; $("ql-err").hidden = false; }
+    finally { $("ql-new").disabled = false; }
+  };
+  $("ql-copy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("ql-url").value); $("ql-copy").textContent = "Copied"; setTimeout(() => { $("ql-copy").textContent = "Copy link"; }, 2000); }
+    catch { $("ql-url").select(); }
+  };
   $("tok-new").onclick = async () => {
     tokErr(""); $("tok-new").disabled = true;
     try {
