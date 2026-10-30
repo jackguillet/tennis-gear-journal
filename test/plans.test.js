@@ -40,6 +40,10 @@ test("each coming Tuesday opens exactly a week before it ends, and booked ones a
   assert.match(ics, /SUMMARY:Book: Tue\\, Nov 10 6 pm court \(Court 15\)/);
   assert.match(ics, /TRIGGER:PT0M/);
   assert.match(ics, /UID:open-p1-2026-11-10@stringbed-meter/);
+  // Backup courts get their own links; a paused routine makes no alerts.
+  const withBackups = toIcs([], { now, openings: planOpenings([{ ...TUE6, backups: "Court 14" }], win, [], { now, weeks: 1 }) });
+  assert.match(withBackups.replace(/\r\n /g, ""), /If taken\\, Court 14: https:\/\/stc\.gametime\.net\/scheduling\/index\/book\/sport\/2\/court\/8\//);
+  assert.equal(planOpenings([{ ...TUE6, paused: true }], win, [], { now }).length, 0);
 });
 
 test("the button finds the bookable day, the best court, GameTime's refusal text and the opening time", () => {
@@ -60,6 +64,8 @@ test("the button finds the bookable day, the best court, GameTime's refusal text
   ];
   assert.deepEqual([...gt.pickSlots(slots, 1080, "Court 15").map((x) => x.court)], ["Court 15", "Court 14", "Court 16"]);
   assert.deepEqual([...gt.pickSlots(slots, 1080, null).map((x) => x.court)], ["Court 14", "Court 15", "Court 16"]);
+  // Favourite taken: backups in the order given, then the rest.
+  assert.deepEqual([...gt.pickSlots(slots, 1080, "Court 17", 90, "Court 16, Court 15").map((x) => x.court)], ["Court 16", "Court 15", "Court 14"]);
   assert.equal(gt.bookError('<div id="body"> Back to booking grid <h2>Booking Not Available</h2> <p>You can only book 7 days in advance.</p> Court Time: Tue'), "You can only book 7 days in advance.");
   assert.equal(gt.bookError("<p>Book this court</p>"), null);
   // The page Jack got on 2026-10-30.
@@ -161,6 +167,18 @@ test("open courts from the button reach a chat assistant, with links to book; it
   assert.equal(listed.structuredContent.regular_times.length, 1);
   assert.equal(listed.structuredContent.regular_times[0].minutes, 75);
   assert.ok(listed.structuredContent.regular_times[0].next.date);
-  assert.ok(!(await tool("remove_regular_time", { id: added.structuredContent.id })).isError);
+  // Jack's Friday routine: change it, add backups, pause and resume it.
+  const pid = added.structuredContent.id;
+  const changed = await tool("update_regular_time", { id: pid, day: "Friday", time: "14:15", court: "Court 17", backups: "15, ct 14" });
+  assert.ok(!changed.isError, JSON.stringify(changed));
+  assert.equal(changed.structuredContent.backups, "Court 15, Court 14"); assert.equal(changed.structuredContent.note, "Marc");
+  assert.equal(changed.structuredContent.dow, 5);
+  assert.equal((await tool("update_regular_time", { id: pid, paused: true })).structuredContent.paused, true);
+  const paused = (await tool("list_regular_times", {})).structuredContent.regular_times[0];
+  assert.equal(paused.paused, true); assert.equal(paused.next, null);
+  assert.equal((await tool("update_regular_time", { id: pid, paused: false, backups: "" })).structuredContent.backups, null);
+  assert.ok((await tool("update_regular_time", { id: "nope", paused: true })).isError);
+  assert.ok((await tool("update_regular_time", { id: pid, backups: "1,2,3,4,5,6,7" })).isError);
+  assert.ok(!(await tool("remove_regular_time", { id: pid })).isError);
   assert.equal((await tool("list_regular_times", {})).structuredContent.regular_times.length, 0);
 });

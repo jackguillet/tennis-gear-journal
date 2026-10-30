@@ -251,12 +251,14 @@
     const next = open ? addDay(d, 7) : d;
     return { bookable: open ? d : null, next, opens: { date: addDay(next, Math.floor(end / 1440) - days), min: end % 1440 } };
   }
-  // Open slots for a regular time, best first: the favourite court at (or near) the time, then any court
-  // in the area, nearest start first. Only starts within `within` minutes count.
-  function pickSlots(slots, startMin, court, within = 90) {
-    const fav = String(court || "").replace(/\D/g, "");
+  // Open slots for a regular time, best first: the favourite court at (or near) the time, then the backup
+  // courts in order ("Court 15, Court 14"), then any court in the area, nearest start first. Only starts
+  // within `within` minutes count.
+  function pickSlots(slots, startMin, court, within = 90, backups = "") {
+    const order = [court].concat(String(backups || "").split(",")).map((c) => String(c || "").replace(/\D/g, "")).filter(Boolean);
+    const rank = (name) => { const i = order.indexOf(name.replace(/\D/g, "")); return i < 0 ? 0 : (i - order.length) * 1000; };
     return slots.filter((x) => Math.abs(x.start - startMin) <= within)
-      .map((x) => ({ ...x, score: Math.abs(x.start - startMin) + (fav && x.court.replace(/\D/g, "") === fav ? -1000 : 0) }))
+      .map((x) => ({ ...x, score: Math.abs(x.start - startMin) + rank(x.court) }))
       .sort((a, b) => a.score - b.score || a.court.localeCompare(b.court, undefined, { numeric: true }));
   }
   // GameTime's "Booking Not Available" page, in a sentence (it ends before "Time:" or "Court Time:").
@@ -628,7 +630,8 @@
       const head = document.createElement("b");
       head.textContent = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow] + " " + clock(startMin) + " \u00b7 " + p.min + " min" + (p.court ? " \u00b7 " + p.court : p.area !== "any" ? " \u00b7 " + ({ indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" })[p.area] : "");
       div.appendChild(head);
-      if (p.note) { const m = document.createElement("div"); m.className = "meta"; m.textContent = p.note; div.appendChild(m); }
+      if (p.note || p.backups) { const m = document.createElement("div"); m.className = "meta"; m.textContent = [p.note, p.backups && "if taken: " + p.backups].filter(Boolean).join(" \u00b7 "); div.appendChild(m); }
+      if (p.paused) { const m = document.createElement("div"); m.className = "meta"; m.textContent = "Paused. Resume it in Tennis Hub."; div.appendChild(m); box.appendChild(div); continue; }
       const { bookable, next, opens } = planDays(p, today, clubNowMin(), days);
       const line = document.createElement("div"); line.className = "courts"; line.style.marginTop = "6px"; div.appendChild(line);
       const later = document.createElement("div"); later.className = "meta";
@@ -643,7 +646,7 @@
         const seen = new Set();
         const open = sheets.flatMap((s) => openSlots(s, { nowMin: bookable === today ? clubNowMin() : -1 }))
           .filter((x) => { const k = x.courtId + "@" + x.start; if (seen.has(k)) return false; seen.add(k); return true; });
-        const best = pickSlots(open, startMin, p.court);
+        const best = pickSlots(open, startMin, p.court, 90, p.backups);
         if (!best.length) {
           const t = document.createElement("span"); t.className = "muted"; t.textContent = "nothing open near " + clock(startMin) + ". ";
           const a = document.createElement("a"); a.href = waitlistJoinUrl; a.textContent = "Join the waitlist"; line.append(t, a);

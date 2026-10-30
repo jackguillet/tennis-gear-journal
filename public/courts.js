@@ -54,8 +54,8 @@ const weekday = (d) => new Date(d + "T12:00:00Z").getUTCDay();
 
 // Where to book a regular time on a given day: the favourite court's booking form when GameTime's id for it
 // is known, otherwise the tennis court sheet.
-export function planLink(plan, date) {
-  const n = (/(\d+)/.exec(plan.court || "") || [])[1];
+export function planLink(plan, date, court = plan.court) {
+  const n = (/(\d+)/.exec(court || "") || [])[1];
   return n && GT_COURT_IDS[n] ? `${GT}/scheduling/index/book/sport/2/court/${GT_COURT_IDS[n]}/date/${date}/time/${toMin(plan.time)}` : `${GT}/scheduling/index/index/sport/2`;
 }
 export function planTitle(plan) {
@@ -69,6 +69,7 @@ export function planTitle(plan) {
 export function planOpenings(plans, win, bookings = [], { now = Date.now(), weeks = 3, tz = DEFAULT_TZ } = {}) {
   const out = [], today = localDate(now, tz);
   for (const p of plans || []) {
+    if (p.paused) continue;
     let d = addDays(today, (p.dow - weekday(today) + 7) % 7);
     for (let i = 0; i < weeks + 1; i++, d = addDays(d, 7)) {
       const end = toMin(p.time) + (Number(p.min) || 60), day = addDays(d, Math.floor(end / 1440) - win.days), m = end % 1440;
@@ -122,7 +123,8 @@ function vevent(b, now) {
 function openingEvent(o, now) {
   const title = "Book: " + planTitle(o.plan).replace(/^\w+ /, new Date(o.start).toLocaleDateString("en-US", { timeZone: DEFAULT_TZ, weekday: "short", month: "short", day: "numeric" }) + " ");
   const url = planLink(o.plan, o.date);
-  const desc = ["GameTime opens booking for this day now.", o.plan.note, "Book: " + url,
+  const backups = String(o.plan.backups || "").split(/,\s*/).filter(Boolean).map((c) => "If taken, " + c + ": " + planLink(o.plan, o.date, c));
+  const desc = ["GameTime opens booking for this court time now.", o.plan.note, "Book: " + url, ...backups,
     "Or tap your Tennis Hub button on stc.gametime.net to see the best open court."].filter(Boolean).join("\n");
   return [
     "BEGIN:VEVENT", `UID:open-${o.plan.id}-${o.date}@stringbed-meter`, `DTSTAMP:${stamp(now)}`,
