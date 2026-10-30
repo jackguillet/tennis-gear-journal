@@ -102,7 +102,7 @@ function vevent(b, now) {
   ];
   const desc = [b.note, b.ref ? "Booking " + b.ref : null,
     atClub(b) ? `Cancel at least ${CANCEL_HOURS} hours ahead in GameTime; a no-show can mean a one-week suspension. Check in at the Pro Shop before you play.` : null,
-    "Added by Stringbed Meter. The time played is logged to your racket after the session."].filter(Boolean).join("\n");
+    "Added by Tennis Hub. The time played is logged to your racket after the session."].filter(Boolean).join("\n");
   lines.push(`DESCRIPTION:${esc(desc)}`);
   // SEQUENCE rises when a booking changes, so calendars take the newer version.
   lines.push(`SEQUENCE:${Math.max(0, Math.floor(((b.updated || now) - Date.UTC(2026, 0, 1)) / 1000))}`);
@@ -121,7 +121,7 @@ function openingEvent(o, now) {
   const title = "Book: " + planTitle(o.plan).replace(/^\w+ /, new Date(o.start).toLocaleDateString("en-US", { timeZone: DEFAULT_TZ, weekday: "short", month: "short", day: "numeric" }) + " ");
   const url = planLink(o.plan, o.date);
   const desc = ["GameTime opens booking for this day now.", o.plan.note, "Book: " + url,
-    "Or tap your Stringbed Meter button on stc.gametime.net to see the best open court."].filter(Boolean).join("\n");
+    "Or tap your Tennis Hub button on stc.gametime.net to see the best open court."].filter(Boolean).join("\n");
   return [
     "BEGIN:VEVENT", `UID:open-${o.plan.id}-${o.date}@stringbed-meter`, `DTSTAMP:${stamp(now)}`,
     `DTSTART:${stamp(o.opensAt)}`, `DTEND:${stamp(o.opensAt + 15 * 60000)}`,
@@ -135,7 +135,7 @@ function openingEvent(o, now) {
 // `openings` (from planOpenings) add "book now" reminders for regular times.
 export function toIcs(bookings, { name = "Tennis courts", now = Date.now(), method, openings = [] } = {}) {
   const lines = [
-    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Stringbed Meter//Court bookings//EN", "CALSCALE:GREGORIAN",
+    "BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Tennis Hub//Court bookings//EN", "CALSCALE:GREGORIAN",
     ...(method ? [`METHOD:${method}`] : []),
     `X-WR-CALNAME:${esc(name)}`, "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H",
     ...bookings.flatMap((b) => vevent(b, now)),

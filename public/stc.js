@@ -293,7 +293,7 @@
   if (!cfg) return;
   const onClubSite = /(^|\.)seattletennisclub\.org$/.test(location.hostname);
   if (!onClubSite && !/(^|\.)gametime\.net$/.test(location.hostname)) {
-    alert("Open stc.gametime.net (courts) or seattletennisclub.org (dining) and sign in, then tap the Stringbed Meter button again.");
+    alert("Open stc.gametime.net (courts) or seattletennisclub.org (dining) and sign in, then tap the Tennis Hub button again.");
     return;
   }
   if (document.getElementById("sbm-gt-host")) { document.getElementById("sbm-gt-host").remove(); }
@@ -371,7 +371,7 @@
   const html = document.documentElement.innerHTML;
   const userId = (/setUserId\((\d+)\)/.exec(html) || [])[1] || null;
   const root = mount(`
-  <div class="wrap"><div class="panel" role="dialog" aria-label="Stringbed Meter for GameTime">
+  <div class="wrap"><div class="panel" role="dialog" aria-label="Tennis Hub for GameTime">
     <header><h1>Seattle Tennis Club</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
     <div class="tabs" role="tablist">
       <button class="tab" role="tab" data-tab="courts" aria-selected="true">Courts</button>
@@ -405,7 +405,7 @@
       <div id="events"><p class="muted">Loading\u2026</p></div>
     </section>
     <section id="tab-partners" hidden>
-      <p class="muted">Members on GameTime's Available Partners list. This list stays on this page; Stringbed Meter doesn't keep it.</p>
+      <p class="muted">Members on GameTime's Available Partners list. This list stays on this page; Tennis Hub doesn't keep it.</p>
       <div class="row" id="pt-level"></div>
       <div class="row" id="pt-type" style="margin-top:8px"></div>
       <input type="search" id="pt-q" placeholder="Search names and notes (e.g. mornings, clay)">
@@ -500,14 +500,14 @@
     }
     box.textContent = "";
     if (found.length) box.appendChild(ul); else box.innerHTML = '<p class="muted">No upcoming bookings.</p>';
-    const note = document.createElement("p"); note.className = "muted"; note.textContent = "Sending to Stringbed Meter\u2026"; box.appendChild(note);
+    const note = document.createElement("p"); note.className = "muted"; note.textContent = "Sending to Tennis Hub\u2026"; box.appendChild(note);
     try {
       const res = await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, days: scanned, bookings: found }) });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || "HTTP " + res.status);
-      note.textContent = out.message || "Saved to Stringbed Meter and your court calendar.";
+      note.textContent = out.message || "Saved to Tennis Hub and your court calendar.";
       renderPlans(out.plans || [], out.window, found);
-    } catch (e) { note.className = "err"; note.textContent = "Couldn't reach Stringbed Meter: " + e.message; }
+    } catch (e) { note.className = "err"; note.textContent = "Couldn't reach Tennis Hub: " + e.message; }
   }
 
   // ---------- regular times: book the next one in one tap ----------
@@ -729,7 +729,7 @@
   // Reads the club's dining availability with the member's own session and shows times after
   // each day they play. Reserving stays on the club's dining page.
   function dining() {
-    const root = mount(`<div class="wrap"><div class="panel" role="dialog" aria-label="Stringbed Meter: dinner after tennis">
+    const root = mount(`<div class="wrap"><div class="panel" role="dialog" aria-label="Tennis Hub: dinner after tennis">
       <header><h1>Dinner after tennis</h1><button class="x" id="close" aria-label="Close">\u00d7</button></header>
       <p class="muted">Canoe Club and Club Grill times after your court bookings. Reserve on the club's <a href="${DINING_PAGE}">dining page</a>.</p>
       <div class="row" id="party"></div>

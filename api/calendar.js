@@ -14,7 +14,7 @@ export async function GET(request) {
     const store = db();
     await ensureSchema(store);
     const user = await userForToken(store, secret, "calendar");
-    if (!user) return new Response("This calendar link isn't valid. Make a new one in the Stringbed Meter app.", { status: 404, headers: { "content-type": "text/plain" } });
+    if (!user) return new Response("This calendar link isn't valid. Make a new one in the Tennis Hub app.", { status: 404, headers: { "content-type": "text/plain" } });
     // Calendar apps poll this every hour or so, which also logs finished bookings without the app open.
     await logFinishedBookings(store, user.id);
     return new Response(await calendarFor(store, user.id), {

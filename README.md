@@ -1,6 +1,6 @@
-# Tennis Gear Journal
+# Tennis Hub (tennis-gear-journal)
 
-**Stringbed Meter:** tap your tennis racket's strings and read the string-bed tension from the pitch. A web app you install on your iPhone's Home Screen. Each player has their own account, so you can share the link with friends: everyone gets their own rackets and history. Data lives in Neon Postgres, accounts are Neon Auth, and the app is hosted on Vercel. It keeps working with no signal and catches up when you're back online.
+**Tennis Hub** (formerly Stringbed Meter): log your tennis, see when strings and shoes are due, keep your court bookings, and tap your racket's strings to read the string-bed tension from the pitch. A web app you install on your iPhone's Home Screen. Each player has their own account, so you can share the link with friends: everyone gets their own rackets and history. Data lives in Neon Postgres, accounts are Neon Auth, and the app is hosted on Vercel. It keeps working with no signal and catches up when you're back online.
 
 ## Set up Neon
 
@@ -30,7 +30,7 @@ npm run db:migrate      # optional: create the tables now (the API also does it 
 
 ## Tracking play
 
-Under **Play on these strings**, pick the type of play (singles, doubles, hitting, lesson or drills, ball machine, serves), how long, and the day, then press **Log play**. The big number is the hours played since the racket's **Strung on** date, so it starts again from zero when you restring and change that date. Your level (NTRP) and style of play (heavy topspin, flat and so on) are under **Your game**, saved with your account.
+On **Today**, the left button under **Log a session** logs your usual session (the last type and length you logged) in one tap, with Undo. **Something else** opens a sheet to pick the racket, type of play (singles, doubles, hitting, lesson or drills, ball machine, serves), how long and the day. Hours on a racket count from its **Strung on** date, so they start again from zero when you restring. Your level (NTRP) and style of play (heavy topspin, flat and so on) are under **Settings**, saved with your account.
 
 ## When to restring
 
@@ -45,17 +45,24 @@ Hours are weighted by type of play (drills and ball machine count more than doub
 
 ## String history
 
-Press **Record a restring** in the Racket section each time a racket is restrung. The strings coming out are saved to **String history** with the dates, string, gauge, tension, the hours played on them and why they came out (broke, went dead or a routine restring); the racket takes the new strings and its hours start again from zero. **By string** compares every string you have used across all rackets: average hours it lasted and how often it broke. The chat connector's `record_restring` does the same (with `old_strings`), and `string_history` answers "which string lasts longest for me?". Shared code: `public/stringjobs.js`.
+Press **Restrung** on the racket's page each time a racket is restrung. The strings coming out are saved to the racket's **Strings** history with the dates, string, gauge, tension, the hours played on them and why they came out (broke, went dead or a routine restring); the racket takes the new strings and its hours start again from zero. **How long each string lasts you** (Gear tab) compares every string you have used across all rackets: average hours it lasted and how often it broke. The chat connector's `record_restring` does the same (with `old_strings`), and `string_history` answers "which string lasts longest for me?". Shared code: `public/stringjobs.js`.
 
 **Strings broke** on the Restring card saves the set as broken in one tap and marks the racket as waiting for a restring (the chat tool `strings_broke` does the same). Every break you log teaches the restring estimate: its break hours move from the textbook figure toward how long strings actually last for you (`personalBreak` in `public/restring.js`).
 
 ## Restring reminders
 
-Under **Restring reminders** in the Racket section, turn on notifications for the phone. Every morning (a Vercel cron at 17:00 UTC calls `/api/reminders`) each racket is checked, and you get one notification when it reaches *Restring soon* and one at *Restring now*, per set of strings. On iPhone this needs the app added to the Home Screen (iOS 16.4 or later). The Web Push keys are made on first use and kept in the database (or set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`). Set `CRON_SECRET` in Vercel so only its cron can start the check. Code: `lib/push.js`, `api/push.js`, `api/reminders.js`, and the `push` handler in `public/sw.js`.
+Under **Reminders** in Settings, turn on notifications for the phone. Every morning (a Vercel cron at 17:00 UTC calls `/api/reminders`) each racket is checked, and you get one notification when it reaches *Restring soon* and one at *Restring now*, per set of strings. On iPhone this needs the app added to the Home Screen (iOS 16.4 or later). The Web Push keys are made on first use and kept in the database (or set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`). Set `CRON_SECRET` in Vercel so only its cron can start the check. Code: `lib/push.js`, `api/push.js`, `api/reminders.js`, and the `push` handler in `public/sw.js`.
 
 ## Tabs
 
-The app has four tabs along the bottom: **Measure** (tap the strings, tension history, calibration, how it works), **Play** (log sessions, court bookings), **Gear** (all your gear at a glance, restring estimate, string history, racket settings, shoes) and **Account** (your game, reminders, quick log, chat assistant, backup). The racket picker stays at the top.
+The app has four tabs along the bottom:
+
+- **Today**: string life for the racket you play with (tap it for its page), your other rackets, shoes, the last tension reading, your next court, one-tap logging and recent sessions.
+- **Measure**: tap the strings and save a reading. Right after a restring a **Calibrate the new strings** card appears until you calibrate or dismiss it.
+- **Courts**: bookings, the times you play every week, and when GameTime opens booking.
+- **Gear**: your rackets (each opens its page), shoes, and how long each string lasts you.
+
+A racket's page has its restring estimate, **Measure**, **Restrung**, **Strings broke** and **Edit** (name, string, tension, dates, head size, calibration, delete), and a **Timeline** of sessions, readings and restrings, the **Tension** chart and readings, and its **Strings** history. **Settings** sits behind your initials at the top right: account and sync, units, your game, reminders, connections (court calendar, GameTime button, quick log, chat assistant) and backup.
 
 ## Shoes
 
@@ -63,7 +70,7 @@ The **Shoes** card on the Gear tab tracks the pair you play in. Every session yo
 
 ## Quick log
 
-On the Account tab, **Make my quick-log link** gives a private link (scope `log`) that can only add and undo play sessions. Opened in Safari it's a page of big buttons that can go on the Home Screen. An iPhone Shortcut can POST JSON to it (`{"kind": "singles", "minutes": 90}`, optionally `racket` and `date`) and gets one line of text back to show. Code: `api/log.js`.
+In Settings, under Connections, **Make my quick-log link** gives a private link (scope `log`) that can only add and undo play sessions. Opened in Safari it's a page of big buttons that can go on the Home Screen. An iPhone Shortcut can POST JSON to it (`{"kind": "singles", "minutes": 90}`, optionally `racket` and `date`) and gets one line of text back to show. Code: `api/log.js`.
 
 ## Undo
 
@@ -73,7 +80,7 @@ Removing a reading, a session, a string-history entry or a whole racket shows an
 
 The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "should I restring the v8?", "I restrung the v8 today at 52 lb".
 
-1. In the app, under **Chat assistant**, press **Make a connector link** and copy it. It looks like `https://<your-app>.vercel.app/api/mcp/sbm_...` and is shown once.
+1. In the app, open Settings, then **Chat assistant** under Connections, and press **Make a connector link** and copy it. It looks like `https://<your-app>.vercel.app/api/mcp/sbm_...` and is shown once.
 2. In Claude, open **Settings → Connectors → Add custom connector**, give it a name (for example Stringbed) and paste the link as the server URL. No other sign-in is needed.
 3. Ask away. The phone app picks up the change on its next sync.
 
@@ -83,17 +90,17 @@ Tools: `log_play`, `list_rackets`, `restring_advice`, `list_sessions`, `delete_s
 
 ## Court bookings (Seattle Tennis Club)
 
-The Court bookings card keeps the courts you book. Add one in the app, or paste a GameTime confirmation email into Claude with the connector on (it calls `add_court_booking`, and sending the same confirmation number again updates the booking). Once a booking ends, its time is logged as play on the racket you picked, or on the one you used most recently. This happens on the next sync, chat call or calendar refresh.
+The Courts tab keeps the courts you book. Add one in the app, or paste a GameTime confirmation email into Claude with the connector on (it calls `add_court_booking`, and sending the same confirmation number again updates the booking). Once a booking ends, its time is logged as play on the racket you picked, or on the one you used most recently. This happens on the next sync, chat call or calendar refresh.
 
-Under "Show bookings in my calendar", make a private calendar link and subscribe to it in Apple or Google Calendar. Each booking appears with a reminder an hour before, and cancelled ones disappear. Calendar links can only read bookings and are separate from connector links (`api_tokens.scope`). The feed is `GET /api/calendar/<secret>.ics`. The 📅 button on a booking downloads a one-off `.ics` file for when you don't want to wait for the calendar to refresh.
+In Settings, under Connections, open **Court calendar** and make a private calendar link and subscribe to it in Apple or Google Calendar. Each booking appears with a reminder an hour before, and cancelled ones disappear. Calendar links can only read bookings and are separate from connector links (`api_tokens.scope`). The feed is `GET /api/calendar/<secret>.ics`. The calendar button on a booking (Courts tab) downloads a one-off `.ics` file for when you don't want to wait for the calendar to refresh.
 
-**GameTime button.** Under "GameTime button" in the same card, make a bookmark (drag it to the bookmarks bar, or paste it into a Safari bookmark on iPhone). Tap it while signed in on stc.gametime.net. It shows open courts by day and area, and tapping one opens GameTime's own booking form for that slot. It also sends your own bookings for the next 7 days to `POST /api/gametime`, which adds them, updates moved ones and cancels ones gone from GameTime. The bookmark's key (`scope = 'gametime'`) can only save court bookings. The script is `public/stc.js`. It runs in your browser with your GameTime session and never books or cancels anything itself.
+**GameTime button.** In Settings, under Connections, open **GameTime button** and make a bookmark (drag it to the bookmarks bar, or paste it into a Safari bookmark on iPhone). Tap it while signed in on stc.gametime.net. It shows open courts by day and area, and tapping one opens GameTime's own booking form for that slot. It also sends your own bookings for the next 7 days to `POST /api/gametime`, which adds them, updates moved ones and cancels ones gone from GameTime. The bookmark's key (`scope = 'gametime'`) can only save court bookings. The script is `public/stc.js`. It runs in your browser with your GameTime session and never books or cancels anything itself.
 
 The panel has two more tabs. **Clinics & events** lists adult clinics, round robins and club nights for the next four weeks, with spots left, and links to each one on GameTime so you can sign up there. **Partners** lists members who opted into GameTime's partner finder, filtered by level, singles or doubles, and name, with email, text and call links. The partner list is read in your browser only; it is never sent to or stored by Stringbed Meter. Clinics and drills you're signed up for are imported as lesson time with your court bookings. **Lessons** shows the lesson time each pro is holding on the court sheet this week (book it with the pro or the Pro Shop), and **Waitlist** shows the groups waiting for each time, marking yours.
 
-**Regular times.** Under "Regular times" in the Court bookings card, save the times you play every week (day, start, length, indoor/outdoor/clay, favourite court, partner). The court calendar gets a "Book now" event with an alert at the minute GameTime opens each one (a set number of days ahead at a set time), linking to that court's booking form. The GameTime button lists them at the top of the Courts tab: for the next day you can book, it picks the best open court (your favourite first, then the same area, nearest time) with a one-tap link to GameTime's form, or offers the waitlist if nothing is open. To learn when booking opens, the button opens GameTime's booking form (without booking) for days 5 to 10 ahead and keeps a short history; once it has seen a new day open, it sets the real days-ahead and time for you.
+**Regular times.** Under **Every week** on the Courts tab, save the times you play every week (day, start, length, indoor/outdoor/clay, favourite court, partner). The court calendar gets a "Book now" event with an alert at the minute GameTime opens each one (a set number of days ahead at a set time), linking to that court's booking form. The GameTime button lists them at the top of the Courts tab: for the next day you can book, it picks the best open court (your favourite first, then the same area, nearest time) with a one-tap link to GameTime's form, or offers the waitlist if nothing is open. To learn when booking opens, the button opens GameTime's booking form (without booking) for days 5 to 10 ahead and keeps a short history; once it has seen a new day open, it sets the real days-ahead and time for you.
 
-**Dinner after tennis.** Tap the same bookmark on seattletennisclub.org while signed in. It asks Stringbed Meter for your coming court times (`POST /api/gametime` with `list: true`), then reads the club's dining availability (`/api/v1/dining/...`) and shows Canoe Club and Club Grill times from half an hour after you finish, for your party size. Reserve on the club's dining page.
+**Dinner after tennis.** Tap the same bookmark on seattletennisclub.org while signed in. It asks Tennis Hub for your coming court times (`POST /api/gametime` with `list: true`), then reads the club's dining availability (`/api/v1/dining/...`) and shows Canoe Club and Club Grill times from half an hour after you finish, for your party size. Reserve on the club's dining page.
 
 Removing a booking here does not cancel it with the club. Do that in GameTime. Notes on how GameTime's court sheet works, for a later direct hookup, are in `docs/gametime.md`.
 

@@ -5,7 +5,7 @@ import { getState, PLAY_KINDS } from "../lib/store.js";
 import { callTool } from "../lib/assistant.js";
 
 // Quick log: log a session in one tap, without opening the app. The link is a "log" link made in
-// the app (Account tab); it can add and undo play sessions and nothing else.
+// the app (Settings, Connections); it can add and undo play sessions and nothing else.
 //   https://<site>/api/log/<secret>     (vercel.json rewrites it to /api/log?token=<secret>)
 //
 //   GET   a small page with big buttons (type, time, racket). Safari can add it to the Home Screen.
@@ -76,12 +76,12 @@ async function handle(request) {
   } catch (e) { console.error(e); return page("Not ready", `<p class="err">The server isn't ready. Try again in a minute.</p>`, 503); }
   const wantsText = request.method === "POST" && !(request.headers.get("accept") || "").includes("text/html") && !(request.headers.get("content-type") || "").includes("form");
   if (!user) {
-    const msg = "This quick-log link isn't valid. Make a new one in Stringbed Meter, under Account.";
+    const msg = "This quick-log link isn't valid. Make a new one in Tennis Hub, under Settings.";
     return wantsText ? new Response(msg, { status: 404, headers: { "content-type": "text/plain; charset=utf-8" } }) : page("Link not valid", `<h1>Link not valid</h1><p>${msg}</p>`, 404);
   }
   if (request.method === "GET") {
     const { rackets } = await getState(store, user.id);
-    if (!Object.keys(rackets).length) return page("Log play", `<h1>Log play</h1><p>Add a racket in Stringbed Meter first.</p>`);
+    if (!Object.keys(rackets).length) return page("Log play", `<h1>Log play</h1><p>Add a racket in Tennis Hub first.</p>`);
     return page("Log play", `<h1>Log play</h1><p class="muted">Pick what you played and tap Log it. Add this page to your Home Screen for a one-tap shortcut.</p>${form(rackets)}`);
   }
   const { body, json } = await read(request);
