@@ -1,14 +1,17 @@
 import { db } from "../lib/db.js";
 import { ensureSchema } from "../lib/schema.js";
 import { userForToken } from "../lib/tokens.js";
-import { TOOLS, callTool } from "../lib/assistant.js";
+import { toolsFor, callTool } from "../lib/assistant.js";
 import { json } from "../lib/http.js";
 
 // A remote MCP server (Streamable HTTP, stateless, JSON responses) so chat assistants can
-// log play and read string wear. Add it as a custom connector with the player's link:
-//   https://<site>/api/mcp/<secret>
-// (vercel.json rewrites that to /api/mcp?token=<secret>). Clients that send headers can use
-// https://<site>/api/mcp with "Authorization: Bearer <secret>" instead.
+// log play and read string wear. Three ways in:
+//   https://<site>/api/mcp with OAuth: claude.ai and other clients find the sign-in through the
+//     401's WWW-Authenticate header and lib/oauth.js; the player allows them in the app.
+//   https://<site>/api/mcp with "Authorization: Bearer <API token>" (Claude Code, the Claude API).
+//   https://<site>/api/mcp/<API token>, the older connector link, for clients that can do neither
+//     (vercel.json rewrites it to /api/mcp?token=<token>).
+// A read-only token only lists and runs the tools that read.
 
 const VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
 const INSTRUCTIONS = "Tennis Hub (formerly Stringbed Meter) keeps a tennis player's rackets, string tension readings and play sessions. "
@@ -43,7 +46,7 @@ async function answer(msg, store, user) {
       });
     }
     case "ping": return ok({});
-    case "tools/list": return ok({ tools: TOOLS });
+    case "tools/list": return ok({ tools: toolsFor(user.access) });
     case "tools/call": {
       const p = msg.params || {};
       return ok(await callTool(store, user, p.name, p.arguments));
@@ -61,7 +64,12 @@ export async function POST(request) {
     await ensureSchema(store);
     user = await userForToken(store, secretFrom(request));
   } catch (e) { console.error(e); return json(rpcError(null, -32603, "The server isn't ready."), 503); }
-  if (!user) return json(rpcError(null, -32001, "This connector link isn't valid. Make a new one in the Tennis Hub app."), 401);
+  if (!user) {
+    // Tells OAuth clients where to sign in (RFC 9728); a token that was sent but no longer works is invalid_token, so they refresh.
+    const origin = new URL(request.url).origin, sent = secretFrom(request);
+    const challenge = `Bearer ${sent ? 'error="invalid_token", ' : ""}resource_metadata="${origin}/.well-known/oauth-protected-resource"`;
+    return json(rpcError(null, -32001, sent ? "This token or connector link isn't valid any more. Make a new one in the Tennis Hub app, or connect again." : "Sign in to Tennis Hub to use this connector."), 401, { "www-authenticate": challenge });
+  }
   let body;
   try { body = JSON.parse(await request.text()); } catch { return json(rpcError(null, -32700, "Parse error."), 400); }
   try {

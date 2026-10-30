@@ -2,6 +2,7 @@ import { db } from "../lib/db.js";
 import { currentUser } from "../lib/auth.js";
 import { serializeSetCookie } from "@neondatabase/auth/server";
 import { ensureSchema } from "../lib/schema.js";
+import { ensureUser } from "../lib/users.js";
 import { createToken, listTokens, revokeToken } from "../lib/tokens.js";
 import { json, readJson } from "../lib/http.js";
 
@@ -21,6 +22,7 @@ async function handle(request) {
   try {
     const store = db();
     await ensureSchema(store);
+    await ensureUser(store, user);
     if (request.method === "POST") {
       const body = await readJson(request, 4096);
       const token = await createToken(store, user.id, body);

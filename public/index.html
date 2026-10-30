@@ -705,19 +705,43 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
         </div>
       </details>
       <details>
-        <summary><span>Chat assistant<small>Log play by chatting with Claude</small></span></summary>
+        <summary><span>Chat assistant<small>Log play and book courts by chatting with Claude</small></span></summary>
         <div>
-          <p class="small">Say "I played an hour of singles". Make a private link, then in Claude open Settings, Connectors, Add custom connector, and paste it as the server URL. Anyone with the link can read and add to your gear, so keep it to yourself.</p>
-          <div class="row-btns"><button class="btn" id="tok-new" type="button">Make a connector link</button></div>
-          <div class="field" id="tok-show" hidden>
-            <label for="tok-url">Your connector link (shown once)</label>
-            <input id="tok-url" type="text" readonly>
-            <div class="row-btns" style="margin-top:6px"><button class="btn" id="tok-copy" type="button">Copy link</button></div>
+          <p class="small">Say "I played an hour of singles". In Claude, open Settings, Connectors, Add custom connector, and paste this as the server URL. Claude then sends you here to sign in and allow it. No secret goes in the link.</p>
+          <div class="field">
+            <label for="mcp-url">Connector URL</label>
+            <input id="mcp-url" type="text" readonly>
+            <div class="row-btns" style="margin-top:6px"><button class="btn" id="mcp-copy" type="button">Copy URL</button></div>
+          </div>
+        </div>
+      </details>
+      <details>
+        <summary><span>API tokens<small>For Claude Code, the Claude API and scripts</small></span></summary>
+        <div>
+          <p class="small">A token opens the chat connector for apps that send it as a header. Read only tokens can look but not change anything. Anyone with a token can use it, so keep it to yourself.</p>
+          <div class="field"><label for="tok-label">Name</label><input id="tok-label" type="text" maxlength="40" placeholder="e.g. Claude Code on my laptop"></div>
+          <div class="grid2" style="margin-top:10px">
+            <div class="field"><label for="tok-access">Access</label><select id="tok-access"><option value="write">Read and write</option><option value="read">Read only</option></select></div>
+            <div class="field"><label for="tok-days">Expires</label><select id="tok-days"><option value="">Never</option><option value="30">In 30 days</option><option value="90" selected>In 90 days</option><option value="365">In a year</option></select></div>
+          </div>
+          <div class="row-btns" style="margin-top:10px"><button class="btn" id="tok-new" type="button">Make a token</button></div>
+          <div class="stack" id="tok-show" hidden style="gap:10px">
+            <div class="field">
+              <label for="tok-secret">Your token (shown once)</label>
+              <input id="tok-secret" type="text" readonly style="font-family: ui-monospace, Menlo, monospace; font-size: 14px">
+              <div class="row-btns" style="margin-top:6px"><button class="btn" id="tok-copy" type="button">Copy token</button></div>
+            </div>
+            <div class="field">
+              <label for="tok-cli">Add it to Claude Code</label>
+              <input id="tok-cli" type="text" readonly style="font-family: ui-monospace, Menlo, monospace; font-size: 14px">
+              <div class="row-btns" style="margin-top:6px"><button class="btn" id="tok-cli-copy" type="button">Copy command</button></div>
+            </div>
+            <p class="small">Other apps: send <code>Authorization: Bearer</code> and the token to the connector URL. An app that can't send headers can use <code>/api/mcp/</code> followed by the token as its URL.</p>
           </div>
           <p class="small err-text" id="tok-err" hidden></p>
         </div>
       </details>
-      <div class="stack" style="gap:4px" id="tok-wrap" hidden><span class="lbl">Links in use</span><ol class="plays" id="tok-list"></ol></div>
+      <div class="stack" style="gap:4px" id="tok-wrap" hidden><span class="lbl">Tokens, links and connected apps</span><ol class="plays" id="tok-list"></ol></div>
     </section>
     <section class="card" aria-labelledby="h-backup">
       <h2 id="h-backup">Backup</h2>
@@ -744,6 +768,20 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
   <p class="note" id="log-note"></p>
   <p class="small err-text" id="log-err" role="alert" hidden></p>
   <button class="btn primary wide" id="log-play" type="button">Log</button>
+</div>
+
+<div class="scrim" id="connect-scrim" hidden></div>
+<div class="sheet" id="connect-sheet" role="dialog" aria-modal="true" aria-labelledby="h-connect" hidden>
+  <div class="grab"></div>
+  <div class="sheet-head"><h2 id="h-connect">Connect an app</h2></div>
+  <p id="connect-line"></p>
+  <fieldset class="picks" id="connect-access"><legend>It can</legend>
+    <label><input type="radio" name="connect-access" value="write" checked><span>Read and change my tennis data</span></label>
+    <label><input type="radio" name="connect-access" value="read"><span>Only read it</span></label>
+  </fieldset>
+  <p class="note" id="connect-note"></p>
+  <p class="small err-text" id="connect-err" role="alert" hidden></p>
+  <div class="row-btns"><button class="btn primary" id="connect-allow" type="button">Allow</button><button class="btn" id="connect-deny" type="button">Don't allow</button></div>
 </div>
 
 <nav class="tabbar" id="tabbar" hidden aria-label="Sections">
@@ -899,7 +937,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     syncing = true;
     const sent = outbox.slice(0, 400), forUser = user.id;
     try {
-      const res = await fetch("api/sync", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops: sent }) });
+      const res = await fetch("api/sync", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops: sent, timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone }) });
       online = true;
       if (!user || user.id !== forUser) return; // signed out or switched player meanwhile
       if (res.status === 401) { signedIn = false; return; }
@@ -2073,9 +2111,9 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       user = next; lsSet("sbm-user", user);
       $("acct-pass").value = ""; setMode(false);
       start();
-      loadTokens(); renderPush();
+      loadTokens(); renderPush(); maybeConnect();
       showTab("today");
-      say(wasCreating ? "Welcome, " + (user.name || user.email) + ". Set up your racket to get started." : "Signed in as " + (user.name || user.email) + ".");
+      if (!connectReq) say(wasCreating ? "Welcome, " + (user.name || user.email) + ". Set up your racket to get started." : "Signed in as " + (user.name || user.email) + ".");
     } catch (e2) { err.textContent = e2 && e2.message && mode !== "signin" && mode !== "create" ? e2.message : "Can't reach the server. Check your connection and try again."; err.hidden = false; }
     finally { go.disabled = false; }
   });
@@ -2093,7 +2131,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     try { await authCall("sign-out", {}); } catch {}
     try { ["rackets", "outbox", "last-sync", "refused", "profile", "shoes"].forEach(k => localStorage.removeItem(key(k))); localStorage.removeItem("sbm-user"); } catch {}
     user = null; rackets = {}; outbox = []; signedIn = null; current = null; profile = { level: null, style: null };
-    $("tok-list").textContent = ""; $("tok-show").hidden = true; $("tok-url").value = "";
+    $("tok-list").textContent = ""; $("tok-show").hidden = true; $("tok-secret").value = ""; $("tok-cli").value = "";
     $("h-account").textContent = "Sign in"; $("account-intro").textContent = INTRO;
     $("acct-email").value = "";
     renderSync();
@@ -2160,16 +2198,25 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     return data;
   }
   function tokErr(msg) { $("tok-err").textContent = msg || ""; $("tok-err").hidden = !msg; }
+  const SCOPE_NAMES = { mcp: "connector", calendar: "calendar", gametime: "GameTime button", log: "quick log" };
+  const tokDate = t => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: new Date(t).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
   function renderTokens(list) {
     const ol = $("tok-list"); ol.textContent = ""; $("tok-wrap").hidden = !(list || []).length;
     (list || []).forEach(t => {
       const li = document.createElement("li");
       const a = document.createElement("span"); a.className = "t";
-      a.textContent = t.label + " · made " + new Date(t.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " · " + (t.lastUsedAt ? "last used " + ago(t.lastUsedAt) : "not used yet");
+      const what = t.kind === "app" ? "connected app" : t.scope === "mcp" ? "API token" + (t.hint ? " …" + t.hint : "") : SCOPE_NAMES[t.scope] + " link";
+      const bits = [t.label, what];
+      if (t.scope === "mcp") bits.push(t.access === "read" ? "read only" : "read and write");
+      if (t.expired) bits.push("expired");
+      else if (t.expiresAt) bits.push("expires " + tokDate(t.expiresAt));
+      bits.push(t.lastUsedAt ? "last used " + ago(t.lastUsedAt) : "made " + tokDate(t.createdAt) + ", not used yet");
+      a.textContent = bits.join(" · ");
       const k = document.createElement("span");
-      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Turn off this link");
+      const del = document.createElement("button"); del.type = "button"; del.textContent = "×";
+      del.setAttribute("aria-label", t.kind === "app" ? "Disconnect " + t.label : "Revoke " + t.label);
       del.onclick = async () => {
-        if (!confirm("Turn off this link? Any assistant using it stops working.")) return;
+        if (!confirm(t.kind === "app" ? "Disconnect " + t.label + "? It will have to ask again to use your data." : "Revoke this? Anything using it stops working.")) return;
         try { renderTokens((await tokensCall("DELETE", { id: t.id })).tokens); $("tok-show").hidden = true; tokErr(""); } catch (e) { tokErr(e.message); }
       };
       li.append(a, k, del); ol.appendChild(li);
@@ -2193,21 +2240,77 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     try { await navigator.clipboard.writeText($("ql-url").value); $("ql-copy").textContent = "Copied"; setTimeout(() => { $("ql-copy").textContent = "Copy link"; }, 2000); }
     catch { $("ql-url").select(); }
   };
+  const mcpUrl = () => new URL("api/mcp", location.href).href;
+  $("mcp-url").value = mcpUrl();
+  $("mcp-copy").onclick = () => copyField("mcp-url", "mcp-copy", "Copy URL");
+  async function copyField(field, button, label) {
+    try { await navigator.clipboard.writeText($(field).value); $(button).textContent = "Copied"; setTimeout(() => { $(button).textContent = label; }, 2000); }
+    catch { $(field).select(); }
+  }
   $("tok-new").onclick = async () => {
     tokErr(""); $("tok-new").disabled = true;
     try {
       const tz = (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone;
-      const out = await tokensCall("POST", { label: "Chat assistant", timezone: tz });
-      $("tok-url").value = new URL("api/mcp/" + out.token.secret, location.href).href;
-      $("tok-show").hidden = false; $("tok-url").select();
+      const days = $("tok-days").value ? Number($("tok-days").value) : null;
+      const out = await tokensCall("POST", { label: $("tok-label").value.trim() || "API token", timezone: tz, access: $("tok-access").value, days });
+      $("tok-secret").value = out.token.secret;
+      $("tok-cli").value = "claude mcp add --transport http tennis-hub " + mcpUrl() + " --header \"Authorization: Bearer " + out.token.secret + "\"";
+      $("tok-show").hidden = false; $("tok-secret").select(); $("tok-label").value = "";
       renderTokens(out.tokens);
-    } catch (e) { tokErr(navigator.onLine ? e.message : "You're offline. Connect to make a link."); }
+    } catch (e) { tokErr(navigator.onLine ? e.message : "You're offline. Connect to make a token."); }
     finally { $("tok-new").disabled = false; }
   };
-  $("tok-copy").onclick = async () => {
-    try { await navigator.clipboard.writeText($("tok-url").value); $("tok-copy").textContent = "Copied"; setTimeout(() => { $("tok-copy").textContent = "Copy link"; }, 2000); }
-    catch { $("tok-url").select(); }
-  };
+  $("tok-copy").onclick = () => copyField("tok-secret", "tok-copy", "Copy token");
+  $("tok-cli-copy").onclick = () => copyField("tok-cli", "tok-cli-copy", "Copy command");
+
+  // ---------- connecting an app (OAuth) ----------
+  // /oauth/authorize sends the player here with ?connect=<the app's request>. Once they're
+  // signed in, ask; the server answers with where to send them back to (with a code or a no).
+  let connectReq = params.get("connect");
+  try { if (connectReq) sessionStorage.setItem("sbm-connect", connectReq); else connectReq = sessionStorage.getItem("sbm-connect"); } catch {}
+  function connectErr(msg) { $("connect-err").textContent = msg || ""; $("connect-err").hidden = !msg; }
+  async function connectCall(body) {
+    const res = await fetch("oauth/authorize", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" }, body: JSON.stringify({ request: connectReq, ...body }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || "That didn't work. Try again."), { status: res.status });
+    return data;
+  }
+  function closeConnect() {
+    connectReq = null;
+    try { sessionStorage.removeItem("sbm-connect"); history.replaceState(null, "", location.pathname); } catch {}
+    $("connect-scrim").hidden = true; $("connect-sheet").hidden = true; document.body.classList.remove("sheet-open");
+  }
+  async function maybeConnect() {
+    if (!connectReq) return;
+    if (!user) { say("Sign in to connect your chat assistant."); return; }
+    let about;
+    try { about = await connectCall({ describe: true }); }
+    catch (e) {
+      if (e.status === 401) { signedIn = false; renderSync(); say("Sign in again to connect your chat assistant."); return; }
+      $("connect-line").textContent = e.message; $("connect-allow").hidden = true; $("connect-access").hidden = true;
+      $("connect-scrim").hidden = false; $("connect-sheet").hidden = false; return;
+    }
+    if (about.redirect) { closeConnect(); location.href = about.redirect; return; }
+    $("connect-line").textContent = "Allow " + about.client + " to use your Tennis Hub as " + (user.name || user.email) + "?";
+    document.querySelector('input[name="connect-access"][value="' + (about.access === "read" ? "read" : "write") + '"]').checked = true;
+    $("connect-note").textContent = "You'll go back to " + about.to + ". You can disconnect it any time in Settings.";
+    $("connect-allow").hidden = false; $("connect-access").hidden = false; connectErr("");
+    $("connect-scrim").hidden = false; $("connect-sheet").hidden = false; document.body.classList.add("sheet-open");
+  }
+  async function answerConnect(allow) {
+    connectErr(""); $("connect-allow").disabled = $("connect-deny").disabled = true;
+    try {
+      const access = (document.querySelector('input[name="connect-access"]:checked') || {}).value || "write";
+      const out = await connectCall({ allow, access, timezone: (Intl.DateTimeFormat().resolvedOptions() || {}).timeZone });
+      closeConnect();
+      if (out.redirect) location.href = out.redirect;
+    } catch (e) { connectErr(navigator.onLine ? e.message : "You're offline. Connect and try again."); }
+    finally { $("connect-allow").disabled = $("connect-deny").disabled = false; }
+  }
+  $("connect-allow").onclick = () => answerConnect(true);
+  $("connect-deny").onclick = () => { if (connectReq) answerConnect(false); else closeConnect(); };
+  setTimeout(maybeConnect, 300);
+
   function calErr(msg) { $("cal-err").textContent = msg || ""; $("cal-err").hidden = !msg; }
   $("cal-new").onclick = async () => {
     calErr(""); $("cal-new").disabled = true;

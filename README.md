@@ -23,10 +23,9 @@ npm run db:migrate      # optional: create the tables now (the API also does it 
    - `DATABASE_URL`: the pooled connection string from `.env.local`. If you connect Neon through Vercel's **Storage** tab instead, it sets this for you. Use the same project and branch.
    - `NEON_AUTH_BASE_URL`: from `.env.local`.
    - `NEON_AUTH_COOKIE_SECRET`: any 32+ random characters (`openssl rand -base64 32`).
-   - `OWNER_EMAIL` (optional): your email. Rackets saved by the earlier passcode version have no owner and move to this account the first time you sign in.
 3. Redeploy, then open the site, create your account and send the link to friends.
 
-`APP_PASSCODE` is no longer used and can be deleted.
+`APP_PASSCODE` and `OWNER_EMAIL` are no longer used and can be deleted. Rackets saved by the earlier passcode version have no owner; they go to the first account that signs in while it is the only account.
 
 ## Tracking play
 
@@ -80,13 +79,19 @@ Removing a reading, a session, a string-history entry or a whole racket shows an
 
 The app has a remote MCP server, so a chat assistant can log sessions for you: "I played an hour of singles", "log 90 minutes of doubles yesterday on the v9", "how many hours are on my strings?", "should I restring the v8?", "I restrung the v8 today at 52 lb".
 
-1. In the app, open Settings, then **Chat assistant** under Connections, and press **Make a connector link** and copy it. It looks like `https://<your-app>.vercel.app/api/mcp/sbm_...` and is shown once.
-2. In Claude, open **Settings → Connectors → Add custom connector**, give it a name (for example Stringbed) and paste the link as the server URL. No other sign-in is needed.
-3. Ask away. The phone app picks up the change on its next sync.
+**claude.ai (OAuth sign-in).** In Claude, open **Settings → Connectors → Add custom connector**, name it (for example Tennis Hub) and paste `https://<your-app>.vercel.app/api/mcp` as the server URL. Claude sends you to the app, which signs you in and asks whether to allow it, with read and write or read only access. There is no secret in the URL. Disconnect it any time in the app (Settings, under Tokens, links and connected apps). The phone app picks up changes on its next sync.
 
-The link is a password for your tennis data: anyone with it can read and add to your rackets. Remove it in the app (×) to turn it off. Assistants that can send headers can call `https://<your-app>.vercel.app/api/mcp` with `Authorization: Bearer sbm_...` instead.
+**API tokens (Claude Code, the Claude API, scripts).** In Settings, open **API tokens**, give the token a name, pick **Read and write** or **Read only** and an expiry, and press **Make a token**. It is shown once. Send it as `Authorization: Bearer sbm_...` to `/api/mcp`, for example:
 
-Tools: `log_play`, `list_rackets`, `restring_advice`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the link was made.
+```
+claude mcp add --transport http tennis-hub https://<your-app>.vercel.app/api/mcp --header "Authorization: Bearer sbm_..."
+```
+
+A read only token lists and runs only the tools that read (marked `readOnlyHint`). An app that can't send headers can put the token in the URL instead: `/api/mcp/sbm_...` (connector links made before OAuth keep working this way). A token is a password for your tennis data; revoke it with ×.
+
+How OAuth works here: `/api/mcp` answers 401 with `WWW-Authenticate: Bearer resource_metadata=".../.well-known/oauth-protected-resource"` (RFC 9728). The app is its own authorization server (`/.well-known/oauth-authorization-server`, RFC 8414): clients register at `/oauth/register` (RFC 7591), `/oauth/authorize` needs PKCE S256 and hands over to the app's Allow screen, and `/oauth/token` returns a one-hour access token plus a refresh token that rotates on every use. All of it is `api/oauth.js` and `lib/oauth.js`.
+
+Tools: `log_play`, `list_rackets`, `restring_advice`, `list_sessions`, `delete_session`, `record_restring`, `set_player_profile`. "Today" means today in the phone's time zone when the token was made (for OAuth, at your last sign-in).
 
 ## Court bookings (Seattle Tennis Club)
 
@@ -140,12 +145,14 @@ npm run build   # checks the page, service worker and API routes load
 | `public/sw.js` | Offline cache. Bump `VERSION` when you change a file in `public/`. |
 | `api/auth.js` | `/api/auth/*` forwards to Neon Auth (Better Auth endpoints such as `sign-up/email`, `sign-in/email`, `sign-out`, `get-session`), so session cookies stay on this site |
 | `api/sync.js` | `POST /api/sync {ops}`: applies the signed-in player's queued changes in one transaction and returns their rackets |
-| `api/mcp.js` | Remote MCP server for chat assistants (`/api/mcp/<link secret>`); tools in `lib/assistant.js` |
-| `api/tokens.js` | Make, list and remove connector links (signed-in player); only a hash of each secret is stored (`lib/tokens.js`) |
+| `api/mcp.js` | Remote MCP server for chat assistants (`/api/mcp` with OAuth or a Bearer API token, or `/api/mcp/<token>`); tools in `lib/assistant.js` |
+| `api/tokens.js` | Make, list and revoke API tokens and links, and disconnect OAuth apps (signed-in player); only a hash of each secret is stored (`lib/tokens.js`) |
+| `api/oauth.js` | OAuth 2.1 for the connector: metadata, client registration, authorize and token (`lib/oauth.js`) |
+| `lib/users.js` | The `users` table: one row per Neon Auth account, upserted on every signed-in request |
 | `lib/auth.js` | Neon Auth proxy and session check (`@neondatabase/auth/server`) |
 | `lib/db.js` | node-postgres pool, attached to Vercel Fluid compute |
 | `lib/store.js` | Validation and SQL for each change, all scoped to the player |
-| `lib/schema.js` | Tables, created on first use. Accounts themselves live in Neon Auth's `neon_auth` schema. |
+| `lib/schema.js` | Tables, created on first use. Sign-in lives in Neon Auth's `neon_auth` schema; `users` mirrors each account and every table with a `user_id` has a foreign key to it (`on delete cascade`). |
 | `scripts/local-auth.js` | Open-source Better Auth in memory, standing in for Neon Auth in dev and tests |
 
 Changes are queued on the device and sent in order. Each reading has an id made on the phone, so a retry never saves it twice. A change aimed at another player's racket does nothing.

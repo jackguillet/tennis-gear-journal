@@ -1,7 +1,8 @@
 import { db } from "../lib/db.js";
 import { currentUser } from "../lib/auth.js";
 import { serializeSetCookie } from "@neondatabase/auth/server";
-import { applyOps, claimUnowned, getState } from "../lib/store.js";
+import { applyOps, getState } from "../lib/store.js";
+import { ensureUser } from "../lib/users.js";
 import { ensureSchema } from "../lib/schema.js";
 import { logFinishedBookings } from "../lib/bookings.js";
 import { json, readJson } from "../lib/http.js";
@@ -22,7 +23,7 @@ export async function POST(request) {
     const body = await readJson(request);
     const store = db();
     await ensureSchema(store);
-    await claimUnowned(store, user);
+    await ensureUser(store, user, { timezone: body.timezone });
     const refused = await applyOps(store, user.id, body.ops || [], { skipInvalid: true });
     await logFinishedBookings(store, user.id);
     const state = await getState(store, user.id);
