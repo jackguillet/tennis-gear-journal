@@ -281,7 +281,41 @@
     return { days, time };
   }
 
+  // One day's sheet as a grid: a column per court, a row per slot time, each cell open, booked, the
+  // member's own, a lesson, a club event or closed (outside the court's bookable hours).
+  function sheetGrid(sheets, userId, { nowMin = -1 } = {}) {
+    const me = Number(userId), courts = [], seen = new Set(), times = new Set();
+    for (const sh of sheets || []) for (const c of (sh && sh.e) || []) {
+      if (seen.has(String(c.i))) continue; seen.add(String(c.i));
+      const slots = new Map();
+      for (const w of c.t || []) { const step = Number(w.i) || 60; for (let t = Number(w.t); t + step <= Number(w.t) + Number(w.d); t += step) slots.set(t, step); }
+      courts.push({ name: c.n, id: String(c.i), slots, bookings: c.b || [] });
+      for (const t of slots.keys()) times.add(t);
+    }
+    courts.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const rows = [...times].sort((a, b) => a - b).map((t) => ({
+      start: t,
+      cells: courts.map((c) => {
+        const step = c.slots.get(t);
+        if (!step) return { state: "closed" };
+        const b = c.bookings.find((x) => overlaps(t, step, Number(x.t), Number(x.d)));
+        if (!b) return { state: t < nowMin ? "past" : "open", minutes: step };
+        const mine = Number(b.e) === me || (b.p || []).some((p) => Number(p.u) === me);
+        return { state: mine ? "mine" : b.j ? "lesson" : b.m || b.l ? "event" : "booked", minutes: step };
+      }),
+    }));
+    return { courts: courts.map((c) => ({ name: c.name, id: c.id })), rows };
+  }
+  // The free slots on a day's sheets, without anything about who booked the rest: what the button
+  // saves to the app so it (and a chat assistant) can say what's open.
+  function freeSlots(sheets) {
+    const seen = new Set();
+    return (sheets || []).flatMap((sh) => openSlots(sh)).filter((x) => { const k = x.courtId + "@" + x.start; if (seen.has(k)) return false; seen.add(k); return true; })
+      .map((x) => ({ c: x.court, i: x.courtId, t: x.start, d: x.minutes }));
+  }
+
   globalThis.SBM_GT = {
+    sheetGrid, freeSlots,
     planDays, pickSlots, bookError, learnWindowFrom,
     openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
     jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
@@ -382,6 +416,7 @@
     </div>
     <section id="tab-courts">
       <p class="muted">Tap a court to open GameTime's booking form for it.</p>
+      <div class="row" id="views" style="margin-bottom:8px"></div>
       <div class="row" id="days"></div>
       <div class="row" id="groups" style="margin-top:8px"></div>
       <div id="slots"><p class="muted">Loading\u2026</p></div>
@@ -417,7 +452,9 @@
   const days = Array.from({ length: DAYS_AHEAD }, (_, i) => addDays(today, i));
   let day = days[0], groups = new Set(GROUPS.map(([g]) => g));
 
+  let view = pref("view", "list");
   function renderChips() {
+    chips($("views"), [["list", "Open courts"], ["grid", "Everything (grid)"]], (v) => v === view, (v) => { view = v; setPref("view", v); renderChips(); renderSlots(); });
     chips($("days"), days.map((d, i) => [d, dayName(d, i)]), (d) => d === day, (d) => { day = d; renderChips(); renderSlots(); });
     chips($("groups"), GROUPS, (g) => groups.has(g), (g) => { if (groups.has(g) && groups.size > 1) groups.delete(g); else groups.add(g); renderChips(); renderSlots(); });
   }
@@ -429,6 +466,7 @@
     try {
       const sheets = await Promise.all([...groups].map((g) => sheet(day, g)));
       if (seq !== renderSeq) return;
+      if (view === "grid") { renderGrid(box, sheets); return; }
       // Each court once, even if two areas' sheets list it.
       const seen = new Set();
       const slots = sheets.flatMap((s) => openSlots(s, { nowMin: day === today ? clubNowMin() : -1 }))
@@ -452,6 +490,50 @@
     } catch (e) {
       if (seq === renderSeq) box.innerHTML = '<p class="err">Couldn\'t read the court sheet. Make sure you are signed in to GameTime, then try again.</p>';
     }
+  }
+
+  // Every court and time at once: what's open (tap to book), taken, yours, a lesson or a club event.
+  const CELL = { open: ["#e7f3ec", "#2e7d4f", ""], booked: ["#e4e7eb", "#5b6b7c", ""], mine: ["#1d4f7c", "#fff", "You"], lesson: ["#f4f1d9", "#7a6a12", "L"], event: ["#f3e8e7", "#9a3b30", "E"], past: ["transparent", "#93a4b6", ""], closed: ["transparent", "", ""] };
+  function renderGrid(box, sheets) {
+    const g = sheetGrid(sheets, userId, { nowMin: day === today ? clubNowMin() : -1 });
+    box.textContent = "";
+    if (!g.courts.length) { box.innerHTML = '<p class="muted">No courts on the sheet that day.</p>'; return; }
+    const key = document.createElement("p"); key.className = "muted"; key.style.fontSize = "12px";
+    key.innerHTML = '<span style="color:#2e7d4f">\u25a0</span> open (tap to book) \u00a0<span style="color:#9aa5b1">\u25a0</span> taken \u00a0<span style="color:#1d4f7c">\u25a0</span> yours \u00a0L lesson \u00a0E club event';
+    box.appendChild(key);
+    const wrap = document.createElement("div"); wrap.style.cssText = "overflow-x:auto;-webkit-overflow-scrolling:touch";
+    const tbl = document.createElement("table"); tbl.style.cssText = "border-collapse:separate;border-spacing:2px;font:12px system-ui,sans-serif";
+    const hr = document.createElement("tr"); hr.appendChild(document.createElement("th"));
+    for (const c of g.courts) { const th = document.createElement("th"); th.textContent = c.name.replace(/^Court\s*/i, ""); th.style.cssText = "font-weight:600;padding:2px;min-width:30px"; hr.appendChild(th); }
+    tbl.appendChild(hr);
+    for (const r of g.rows) {
+      if (r.cells.every((c) => c.state === "closed" || c.state === "past")) continue;
+      const tr = document.createElement("tr");
+      const th = document.createElement("th"); th.textContent = clock(r.start); th.style.cssText = "text-align:right;font-weight:600;padding:0 4px;white-space:nowrap;position:sticky;left:0;background:inherit"; tr.appendChild(th);
+      r.cells.forEach((c, i) => {
+        const td = document.createElement("td"), [bg, fg, label] = CELL[c.state];
+        td.style.cssText = `background:${bg};color:${fg};height:26px;min-width:30px;border-radius:5px;text-align:center;font-weight:600`;
+        if (c.state === "open") { const a = document.createElement("a"); a.href = bookUrl(g.courts[i].id, day, r.start); a.setAttribute("aria-label", "Book " + g.courts[i].name + " at " + clock(r.start)); a.style.cssText = "display:block;height:26px;text-decoration:none"; td.appendChild(a); }
+        else td.textContent = label;
+        tr.appendChild(td);
+      });
+      tbl.appendChild(tr);
+    }
+    wrap.appendChild(tbl); box.appendChild(wrap);
+  }
+
+  // The coming week's free slots (free or taken only, no names) go to the app, so it and a chat
+  // assistant can say what's open. At most every 20 minutes, one sheet at a time.
+  async function saveOpenCourts() {
+    try { if (Date.now() - Number(localStorage.getItem("sbm-gt-open-at") || 0) < 20 * 60000) return; } catch {}
+    const out = [];
+    for (const d of days) {
+      const sheets = [];
+      for (const [g] of GROUPS) { try { sheets.push(await sheet(d, g)); } catch { return; } }
+      out.push({ date: d, slots: freeSlots(sheets).filter((x) => d !== today || x.t > clubNowMin()) });
+    }
+    const r = await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, open: { at: Date.now(), days: out } }) }).catch(() => null);
+    if (r && r.ok) try { localStorage.setItem("sbm-gt-open-at", String(Date.now())); } catch {}
   }
 
   // Look through the coming days for the member's own bookings, one request at a time, and
@@ -724,6 +806,7 @@
 
   renderChips(); renderSlots();
   const mineDone = scanMine();
+  mineDone.finally(() => saveOpenCourts());
 
   // ---------- dinner after tennis (on seattletennisclub.org) ----------
   // Reads the club's dining availability with the member's own session and shows times after

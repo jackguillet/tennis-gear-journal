@@ -55,6 +55,22 @@ test("the button finds the bookable day, the best court, GameTime's refusal text
   assert.deepEqual({ ...gt.learnWindowFrom(seen.slice(2)) }, { days: 7, time: null });
 });
 
+test("the grid marks each court and time open, taken, yours, a lesson or a club event; saved slots carry no names", () => {
+  const sheet = { e: [
+    { n: "Court 15", i: "9", t: [{ t: 1080, d: 150, i: 75 }], b: [{ t: 1080, d: 75, bkId: 1, e: 18578, p: [{ n: "JACK G", u: 18578 }] }] },
+    { n: "Court 14", i: "8", t: [{ t: 1080, d: 150, i: 75 }], b: [{ t: 1155, d: 75, bkId: 2, j: "SCOTT (PRO) MOORE" }] },
+    { n: "Court 16", i: "10", t: [{ t: 1155, d: 75, i: 75 }], b: [{ t: 1155, d: 75, bkId: 3, m: 8300, p: [{ n: "PAT LEE", u: 1 }] }] },
+  ] };
+  const g = gt.sheetGrid([sheet, sheet], "18578");
+  assert.deepEqual([...g.courts.map((c) => c.name)], ["Court 14", "Court 15", "Court 16"], "each court once, in order");
+  assert.deepEqual([...g.rows.map((r) => r.start)], [1080, 1155]);
+  assert.deepEqual([...g.rows[0].cells.map((c) => c.state)], ["open", "mine", "closed"]);
+  assert.deepEqual([...g.rows[1].cells.map((c) => c.state)], ["lesson", "open", "event"]);
+  const free = gt.freeSlots([sheet]);
+  assert.deepEqual(JSON.parse(JSON.stringify(free)), [{ c: "Court 14", i: "8", t: 1080, d: 75 }, { c: "Court 15", i: "9", t: 1155, d: 75 }]);
+  assert.ok(!JSON.stringify(free).includes("PAT"));
+});
+
 function browser() {
   const jar = new Map();
   return {
@@ -103,4 +119,35 @@ test("regular times sync, show in the calendar and reach the GameTime button; th
   assert.deepEqual((await send({ window: { days: 7 } })).window, { days: 7, time: "08:00", set: true });
   await jack.call("POST", "/api/sync", { ops: [{ op: "plan.delete", id: "p1" }] });
   assert.equal((await jack.call("POST", "/api/sync", { ops: [] })).data.plans.length, 0);
+});
+
+test("open courts from the button reach a chat assistant, with links to book; it can manage regular times", async () => {
+  const jack = browser();
+  await jack.call("POST", "/api/auth/sign-up/email", { name: "Jack", email: "jack-open@example.com", password: "forehand-winner" });
+  const key = (await jack.call("POST", "/api/tokens", { scope: "gametime" })).data.token.secret;
+  const mcp = (await jack.call("POST", "/api/tokens", {})).data.token.secret;
+  const day = new Date(Date.now() + 2 * 864e5).toLocaleDateString("en-CA", { timeZone: LA });
+  const res = await fetch(app.origin + "/api/gametime", { method: "POST", headers: { "content-type": "text/plain", origin: "https://stc.gametime.net" },
+    body: JSON.stringify({ key, open: { at: Date.now(), days: [{ date: day, slots: [{ c: "Court 15", i: "9", t: 1080, d: 75 }, { c: "Court 3", i: "16", t: 1140, d: 75 }, { c: "<b>", i: "x", t: 5, d: 75 }] }] } }) });
+  assert.equal((await res.json()).saved, 1);
+  let id = 0;
+  const tool = async (name, args) => (await (await fetch(app.origin + "/api/mcp/" + mcp, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name, arguments: args } }) })).json()).result;
+  const found = await tool("find_open_courts", { date: day, after: "17:00", area: "indoor" });
+  assert.equal(found.structuredContent.days[0].open.length, 1);
+  assert.equal(found.structuredContent.days[0].open[0].book, `https://stc.gametime.net/scheduling/index/book/sport/2/court/9/date/${day}/time/1080`);
+  const all = await tool("find_open_courts", { date: day });
+  assert.equal(all.structuredContent.days[0].open.length, 2, "the bad slot was dropped");
+  const near = await tool("court_booking_link", { date: day, time: "19:15" });
+  assert.equal(near.structuredContent.court, "Court 3"); assert.match(near.structuredContent.link, /court\/16\//);
+  const exact = await tool("court_booking_link", { date: day, time: "18:00", court: "Court 17" });
+  assert.equal(exact.structuredContent.open, false); assert.match(exact.structuredContent.link, /court\/11\/.*time\/1080$/);
+  const added = await tool("add_regular_time", { day: "Tuesday", time: "18:00", area: "indoor", note: "Marc" });
+  assert.ok(!added.isError);
+  const listed = await tool("list_regular_times", {});
+  assert.equal(listed.structuredContent.regular_times.length, 1);
+  assert.equal(listed.structuredContent.regular_times[0].minutes, 75);
+  assert.ok(listed.structuredContent.regular_times[0].next.date);
+  assert.ok(!(await tool("remove_regular_time", { id: added.structuredContent.id })).isError);
+  assert.equal((await tool("list_regular_times", {})).structuredContent.regular_times.length, 0);
 });
