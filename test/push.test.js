@@ -2,7 +2,8 @@ import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { startServer } from "../scripts/server.js";
 import { db } from "../lib/db.js";
-import { runReminders } from "../lib/push.js";
+import { runReminders, runCourtAlerts } from "../lib/push.js";
+import { zonedToUtc } from "../public/courts.js";
 
 // Restring reminders: subscribe through the API, then run the daily check with a stand-in for the
 // push service (the real one needs a phone).
@@ -59,6 +60,27 @@ test("the daily check sends one reminder per stage per set of strings", async ()
   assert.deepEqual(out.map((x) => x.status), ["now", "now"]);
 });
 
+test("a court request alerts the phone once, when GameTime opens it", async () => {
+  const LA = "America/Los_Angeles";
+  await jack("POST", "/api/sync", { ops: [{ op: "plan.put", id: "alert-tue", dow: 2, time: "18:00", min: 75, area: "indoor", court: "Court 15", backups: "Court 14" }] });
+  sent.length = 0;
+  // Tue Nov 17 6 to 7:15 pm opens Tue Nov 10 at 7:15 pm.
+  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-10", "19:10", LA)) })).length, 0, "not before it opens");
+  const out = await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-10", "19:20", LA)) });
+  assert.deepEqual(out.map((x) => x.date), ["2026-11-17"]);
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].title, /^Book now: Tue, Nov 17/);
+  assert.match(sent[0].body, /Court 15.*Court 14/);
+  assert.equal(sent[0].url, "https://stc.gametime.net/scheduling/index/book/sport/2/court/9/date/2026-11-17/time/1080");
+  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-10", "19:25", LA)) })).length, 0, "only once");
+  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-17", "19:20", LA)) })).length, 1, "next week's");
+  // Booked already, or long past the opening: nothing.
+  await jack("POST", "/api/sync", { ops: [{ op: "booking.put", id: "alert-bk", start: zonedToUtc("2026-12-01", "18:00", LA), min: 75, tz: LA, kind: "singles", court: "Court 15" }] });
+  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-24", "19:20", LA)) })).length, 0);
+  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "21:00", LA)) })).length, 0);
+  await jack("POST", "/api/sync", { ops: [{ op: "plan.delete", id: "alert-tue" }, { op: "booking.cancel", id: "alert-bk" }] });
+});
+
 test("a phone that turned notifications off is dropped", async () => {
   await jack("POST", "/api/push", { subscription: { ...sub, endpoint: "https://push.example.com/gone" } });
   assert.equal((await jack("GET", "/api/push")).data.phones, 2);
@@ -73,5 +95,7 @@ test("the cron route runs the check, and CRON_SECRET locks it", async () => {
   process.env.CRON_SECRET = "s3cret";
   assert.equal((await fetch(app.origin + "/api/reminders")).status, 401);
   assert.equal((await fetch(app.origin + "/api/reminders", { headers: { authorization: "Bearer s3cret" } })).status, 200);
+  const only = await fetch(app.origin + "/api/reminders?only=courts", { headers: { authorization: "Bearer s3cret" } });
+  assert.deepEqual(await only.json(), { courts: 0 });
   delete process.env.CRON_SECRET;
 });
