@@ -300,6 +300,17 @@ table.cgrid td > * { display: grid; place-items: center; width: 100%; min-width:
 .gpick a { color: var(--court); font-weight: 600; }
 ol.bookings li.plan { grid-template-columns: 1fr auto; }
 ol.reqs li { grid-template-columns: 1fr 40px; align-items: start; }
+.suggest { display: flex; flex-direction: column; gap: 8px; }
+.suggest > div { background: var(--court-soft); border-radius: 12px; padding: 10px 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 15px; }
+.suggest > div span { flex: 1 1 200px; }
+.suggest button.btn { padding: 6px 12px; min-height: 38px; font-size: 14.5px; }
+.suggest button.linkbtn { color: var(--muted); }
+.bkline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 4px; }
+.bkline .linkbtn { padding: 4px 0; font-size: 14px; }
+.bkline a { font-size: 14px; color: var(--court); font-weight: 600; }
+.chip.wx { text-transform: none; letter-spacing: 0; font-size: 12px; }
+.speed { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+.played p { font-size: 15.5px; }
 ol.reqs .racts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 6px; }
 ol.reqs .racts .chip { text-transform: none; letter-spacing: 0; font-size: 12.5px; }
 ol.reqs .racts a.btn { padding: 5px 12px; min-height: 36px; font-size: 14px; }
@@ -431,6 +442,11 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
   <!-- ===== Courts ===== -->
   <div class="tab" id="tab-courts" data-tab="courts" hidden>
     <div class="titlebar"><h1>Courts</h1><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <section class="card played" id="played-card" aria-labelledby="h-played" hidden>
+      <h2 id="h-played">How was it?</h2>
+      <p id="played-line"></p>
+      <div class="row-btns"><button class="btn primary" type="button" id="played-ok">Looks right</button><button class="btn" type="button" id="played-fix">Change</button><button class="btn danger" type="button" id="played-no">Didn't play</button></div>
+    </section>
     <section class="card" aria-labelledby="h-grid" id="grid-card">
       <div class="sect-head"><h2 id="h-grid">Open courts</h2><a class="small gseen" id="grid-seen" target="_blank" rel="noopener"></a></div>
       <div class="gchips" id="grid-days" aria-label="Day"></div>
@@ -469,6 +485,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
     <section class="card" aria-labelledby="h-plans">
       <h2 id="h-plans">Requests</h2>
       <p class="small">Courts you want, once or every week. Each shows where it stands: when it opens, the court to book once it's open, the waitlist if it's taken, and booked once it's yours. Your court calendar gets a "Book now" alert the minute GameTime opens each one.</p>
+      <div id="suggest" class="suggest" hidden></div>
       <ol class="plays reqs" id="plans"></ol>
       <details id="plan-sub" class="addform">
         <summary id="pl-sum">Request a court</summary>
@@ -855,7 +872,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
-import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, requestStatus, bookUrl, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
+import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, requestStatus, bookUrl, forecastUrl, rainAt, outdoorCourt, outdoorPlan, indoorSwap, speedSummary, shareText, DAY_NAMES, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
 import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
 import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings } from "./stringjobs.js";
 (() => {
@@ -891,10 +908,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   let bookWindow = { days: 7, set: false }; // GameTime opens each court time this many days before it ends
   let courtSheet = [];    // the court sheet the GameTime button last saw: [{ date, at, courts }]
   let waitlist = [];      // the player's own places on GameTime's waitlist: [{ date, start, minutes, courts }]
+  let courtStats = [];    // how fast courts go, from the button's scans: [{ dow, t, area, bucket, open, seen }]
+  let suggestions = [];   // weekly times booked lately that no request covers yet
+  let forecast = null;    // Open-Meteo hourly forecast for the club, refreshed at most hourly
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("shoes"), shoes); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); lsSet(key("sheet"), courtSheet); lsSet(key("waitlist"), waitlist); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("shoes"), shoes); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); lsSet(key("sheet"), courtSheet); lsSet(key("waitlist"), waitlist); lsSet(key("stats"), courtStats); lsSet(key("suggest"), suggestions); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -1029,6 +1049,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       if (body.window) bookWindow = body.window;
       if (body.courtSheet) courtSheet = body.courtSheet;
       if (body.waitlist) waitlist = body.waitlist;
+      if (body.courtStats) courtStats = body.courtStats;
+      if (body.suggestions) suggestions = body.suggestions;
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
@@ -1222,7 +1244,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     $("play-date").max = today();
     renderRestring(); renderJobs(); renderShoes(); renderOverview(); renderViews();
   }
-  let showAllPlays = false, playDatePicked = false;
+  let showAllPlays = false, playDatePicked = false, replacing = null;
   function renderProfile() { $("p-level").value = profile.level || ""; $("p-style").value = profile.style || ""; }
 
   function renderRestring() {
@@ -1518,10 +1540,18 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     t.append(w, more);
     // The club's 6-hour cancel rule, as a chip that turns amber on the day and red once it has passed.
     const cut = cancelBy(b);
-    if (!done && cut) {
-      const c = document.createElement("span"); c.className = "chip cut " + (cut <= now ? "bad" : cut - now < 864e5 ? "warn" : "");
-      c.textContent = cut > now ? "Cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : "Too late to cancel";
-      const line = document.createElement("span"); line.style.display = "block"; line.style.marginTop = "4px"; line.appendChild(c); t.appendChild(line);
+    if (!done) {
+      const line = document.createElement("span"); line.className = "bkline";
+      if (cut) {
+        const c = document.createElement("span"); c.className = "chip cut " + (cut <= now ? "bad" : cut - now < 864e5 ? "warn" : "");
+        c.textContent = cut > now ? "Cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : "Too late to cancel";
+        line.appendChild(c);
+      }
+      if (outdoorCourt(b.court)) weatherBits(line, b.start, b.min, now);
+      const sh = document.createElement("button"); sh.type = "button"; sh.className = "linkbtn"; sh.textContent = "Send to partner";
+      sh.onclick = () => sharePlay(b);
+      line.appendChild(sh);
+      t.appendChild(line);
     }
     const k = document.createElement("span"); k.className = "k"; k.textContent = dur(b.min);
     const cal = document.createElement("button"); cal.type = "button"; cal.innerHTML = CAL_ICON; cal.setAttribute("aria-label", "Add this booking to your calendar");
@@ -1543,6 +1573,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const where = o.plan.court || (o.plan.area && o.plan.area !== "any" ? { indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" }[o.plan.area] : "any court");
     more.textContent = (o.plan.date ? "Request · " : "Every week · ") + where + (o.plan.note ? " · with " + o.plan.note : "") + " · not booked yet";
     t.append(w, more);
+    if (outdoorPlan(o.plan)) { const line = document.createElement("span"); line.className = "bkline"; weatherBits(line, o.start, o.plan.min, now); if (line.children.length) t.appendChild(line); }
     li.appendChild(t);
     if (waitlist.some(w => w.date === o.date && Math.abs(w.start - toMinutes(o.plan.time)) <= 30)) {
       const c = document.createElement("span"); c.className = "chip cut warn"; c.textContent = "On the waitlist"; li.appendChild(c);
@@ -1564,6 +1595,101 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   }
   const toMinutes = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
   const clockMin = m => { const h = Math.floor(m / 60) % 24, mi = m % 60; return ((h % 12) || 12) + (mi ? ":" + String(mi).padStart(2, "0") : "") + (h < 12 ? " am" : " pm"); };
+  const courtAreaOf = c => { const n = +((/(\d+)/.exec(c || "") || [])[1]); return n >= 14 ? "indoor" : n >= 9 ? "clay" : "outdoor"; };
+  // ---------- weather for outdoor courts ----------
+  // Open-Meteo's hourly forecast for the club, kept for an hour on this phone.
+  let forecastLoading = false;
+  function loadForecast() {
+    const saved = lsGet("sbm-forecast", null);
+    if (saved && Date.now() - saved.at < 3600e3) { forecast = saved.data; return; }
+    if (saved) forecast = saved.data;
+    if (forecastLoading || !navigator.onLine) return;
+    forecastLoading = true;
+    fetch(forecastUrl()).then(r => r.ok ? r.json() : null).then(d => {
+      if (d && d.hourly) { forecast = d; lsSet("sbm-forecast", { at: Date.now(), data: d }); renderBookings(); }
+    }).catch(() => {}).finally(() => { forecastLoading = false; });
+  }
+  // A rain chip for an outdoor court time and, when rain is likely, an indoor court to switch to.
+  function weatherBits(box, start, min, now) {
+    const w = rainAt(forecast, start, min, clubTz());
+    if (!w) return;
+    const c = document.createElement("span"); c.className = "chip wx " + (w.prob >= 60 ? "bad" : w.prob >= 35 ? "warn" : "good");
+    c.textContent = (w.prob >= 35 ? "☂ " + w.prob + "% rain" : "☀ " + w.prob + "% rain") + (w.temp != null ? " · " + Math.round(unitTemp(w.temp)) + "°" : "");
+    box.appendChild(c);
+    if (w.prob >= 50) {
+      const swap = indoorSwap(courtSheet, start, { now, days: bookWindow.days, tz: clubTz() });
+      if (swap) {
+        const a = document.createElement("a"); a.href = bookUrl(swap.id, localDate(start, clubTz()), swap.start); a.target = "_blank"; a.rel = "noopener";
+        a.textContent = swap.court.replace(/^Court\s*/i, "Ct ") + " indoor is open"; box.appendChild(a);
+      }
+    }
+  }
+  // °C from the forecast, in °F for a US phone.
+  const unitTemp = c => (/^en-US$/i.test(navigator.language) ? c * 9 / 5 + 32 : c);
+  // ---------- send to partner ----------
+  async function sharePlay(b) {
+    const text = shareText(b, b.tz || clubTz());
+    const file = new File([toIcs([b], { name: "Tennis", method: "PUBLISH" })], "tennis.ics", { type: "text/calendar" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ text, files: [file] }); return; }
+      if (navigator.share) { await navigator.share({ text }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    try { await navigator.clipboard.writeText(text); say("Copied. Paste it into a message to your partner."); } catch { prompt("Copy this for your partner:", text); }
+  }
+  // ---------- suggested requests ----------
+  function renderSuggest() {
+    const box = $("suggest"); box.textContent = "";
+    const hidden = prefs.suggestNo || [];
+    const list = (suggestions || []).filter(x => !hidden.includes(x.dow + "@" + x.time)).slice(0, 2);
+    box.hidden = !list.length;
+    list.forEach(x => {
+      const div = document.createElement("div"), sp = document.createElement("span");
+      sp.textContent = "You've booked " + DAY_NAMES[x.dow] + " " + clockMin(toMinutes(x.time)) + (x.court ? " (" + x.court + ")" : "") + " " + x.count + " weeks lately. Make it a weekly request?";
+      const yes = document.createElement("button"); yes.type = "button"; yes.className = "btn primary"; yes.textContent = "Add";
+      yes.onclick = () => {
+        const p = { id: uid(), dow: x.dow, date: null, skips: [], time: x.time, min: x.min || 75, area: x.area && x.area !== "other" ? x.area : "any", court: x.court || null, kind: "singles", note: null, backups: null, paused: false };
+        queue({ op: "plan.put", ...p }); applyLocal({ op: "plan.put", ...p });
+        suggestions = suggestions.filter(y => y !== x); localSave(); renderBookings(); say("Added " + planTitle(p) + " every week.");
+      };
+      const no = document.createElement("button"); no.type = "button"; no.className = "linkbtn"; no.textContent = "Not now";
+      no.onclick = () => { prefs.suggestNo = hidden.concat([x.dow + "@" + x.time]).slice(-20); savePrefs(); renderSuggest(); };
+      div.append(sp, yes, no); box.appendChild(div);
+    });
+  }
+  // ---------- how was it? ----------
+  // A booking that just ended is logged as play by itself; this asks once whether that was right.
+  let playedAsk = params.get("played");
+  function playedBooking() {
+    const now = Date.now(), ok = prefs.playedOk || [];
+    const done = bookings.filter(b => b.playId && b.start + b.min * 60000 <= now && now - (b.start + b.min * 60000) < 2 * 864e5 && !ok.includes(b.id));
+    return (playedAsk && done.find(b => b.id === playedAsk)) || done[done.length - 1] || null;
+  }
+  function findPlay(playId) {
+    for (const [rid, r] of Object.entries(rackets)) { const p = (r.plays || []).find(x => x.id === playId); if (p) return [rid, p]; }
+    return [null, null];
+  }
+  function renderPlayed() {
+    const b = playedBooking(), card = $("played-card");
+    const [rid, play] = b ? findPlay(b.playId) : [null, null];
+    card.hidden = !b || !play;
+    if (card.hidden) return;
+    const when = new Date(b.start).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: "short", hour: "numeric", minute: "2-digit" });
+    $("played-line").textContent = when + (b.court ? " on " + b.court : "") + ": logged " + dur(play.min) + " of " + (KIND_NAME[play.kind] || play.kind).toLowerCase() + " on " + rackets[rid].name + ".";
+    const done = () => { prefs.playedOk = (prefs.playedOk || []).concat([b.id]).slice(-30); savePrefs(); playedAsk = null; renderPlayed(); };
+    $("played-ok").onclick = done;
+    $("played-no").onclick = () => { done(); removePlay(rid, play); renderPlays(); renderSettings(); };
+    $("played-fix").onclick = () => {
+      done();
+      selectRacket(rid);
+      openLog();
+      document.querySelectorAll('input[name="kind"]').forEach(i => { i.checked = i.value === play.kind; });
+      const known = DURS.some(([v]) => v === play.min);
+      document.querySelectorAll('input[name="dur"]').forEach(i => { i.checked = +i.value === (known ? play.min : 0); });
+      $("f-dur-other").hidden = known; if (!known) $("dur-other").value = +(play.min / 60).toFixed(2);
+      $("play-date").value = play.d; playDatePicked = true; updateLogLabel();
+      replacing = { rid, play };
+    };
+  }
   function renderBookings() {
     $("courts").hidden = !user; $("grid-card").hidden = !user;
     const ol = $("bookings"); ol.textContent = "";
@@ -1582,7 +1708,8 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     Object.entries(rackets).forEach(([id, r]) => { const o = document.createElement("option"); o.value = id; o.textContent = r.name; sel.appendChild(o); });
     sel.value = rackets[keep] ? keep : "";
     if (!$("bk-date").value) $("bk-date").value = today();
-    renderPlans(); renderGrid(); renderViews();
+    renderPlans(); renderSuggest(); renderPlayed(); renderGrid(); renderViews();
+    if (!forecast || !lsGet("sbm-forecast", null) || Date.now() - lsGet("sbm-forecast", { at: 0 }).at > 3600e3) loadForecast();
   }
   // ---------- the court grid ----------
   // Drawn from the court sheet the GameTime button last saw (no names): every court and time for one
@@ -1715,10 +1842,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const sm = document.createElement("small");
       sm.textContent = [dur(p.min), p.note ? "with " + p.note : null, p.backups ? "if taken: " + p.backups : null].filter(Boolean).join(" · ");
       t.append(w, sm);
+      const speed = speedSummary(courtStats, { dow: p.dow, time: p.time, area: p.court ? courtAreaOf(p.court) : p.area || "any" });
+      if (speed) { const sp = document.createElement("span"); sp.className = "speed"; sp.textContent = speed + "."; t.appendChild(sp); }
       const acts = document.createElement("span"); acts.className = "racts";
       const when = st.start ? new Date(st.start).toLocaleDateString(undefined, { timeZone: clubTz(), weekday: "short", month: "short", day: "numeric" }) : "";
       const chip = (cls, text) => { const c = document.createElement("span"); c.className = "chip " + cls; c.textContent = text; acts.appendChild(c); };
       const link = (text, href, primary) => { const a = document.createElement("a"); a.className = "btn" + (primary ? " primary" : ""); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = text; if (primary) { a.style.background = "var(--court)"; a.style.color = "var(--panel)"; } acts.appendChild(a); };
+      if (st.start && outdoorPlan(p) && !["booked", "paused", "done"].includes(st.state)) weatherBits(acts, st.start, p.min, now);
       if (st.state === "soon") chip("", (p.date ? "" : when + ": ") + "opens " + new Date(st.opensAt).toLocaleString(undefined, { timeZone: clubTz(), weekday: "short", hour: "numeric", minute: "2-digit" }));
       else if (st.state === "open") { chip("good", (p.date ? "" : when + ": ") + "open now"); link("Book " + st.best.court.replace(/^Court\s*/i, "Ct ") + (st.best.start !== toMinutes(p.time) ? " · " + clockMin(st.best.start) : ""), bookUrl(st.best.id, st.date, st.best.start), true); }
       else if (st.state === "unknown") { chip("good", (p.date ? "" : when + ": ") + "open now"); link("Book", planLink(p, st.date), true); }
@@ -1942,7 +2072,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const d = $("play-date").value || today();
     if (d > today()) { setPlayMsg("That day hasn't happened yet."); return; }
     setPlayMsg("");
+    // Fixing a session logged from a booking: the new one takes the old one's place.
+    if (replacing) { const { rid, play } = replacing; const k = rackets[rid]; if (k) { k.plays = (k.plays || []).filter(y => y.id !== play.id); queue({ op: "play.delete", id: play.id }); } }
     logPlay(current, { d, min, kind });
+    replacing = null;
     closeLog();
   };
   function setPlayMsg(m) { $("log-err").textContent = m || ""; $("log-err").hidden = !m; }
@@ -2212,6 +2345,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     (document.querySelector('#kind-picks input:checked') || $("log-play")).focus();
   }
   function closeLog() {
+    replacing = null;
     $("log-scrim").hidden = true; $("log-sheet").hidden = true; document.body.classList.remove("sheet-open");
     if (sheetReturn && sheetReturn.focus) sheetReturn.focus();
   }
@@ -2227,6 +2361,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("log-sheet").hidden) closeLog(); });
   $("log-rackets").addEventListener("change", e => { selectRacket(e.target.value); updateLogLabel(); });
   if (prefs.tab === "play" || prefs.tab === "account") prefs.tab = "today";
+  if (params.get("played")) prefs.tab = "courts"; // from a "How was it?" notification
   showTab(prefs.tab, true);
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
@@ -2247,7 +2382,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     bookings = lsGet(key("bookings"), []);
     shoes = lsGet(key("shoes"), []);
     plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, set: false }); if (bookWindow.time) bookWindow = { days: 7, set: false };
-    courtSheet = lsGet(key("sheet"), []); waitlist = lsGet(key("waitlist"), []);
+    courtSheet = lsGet(key("sheet"), []); waitlist = lsGet(key("waitlist"), []); courtStats = lsGet(key("stats"), []); suggestions = lsGet(key("suggest"), []);
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();

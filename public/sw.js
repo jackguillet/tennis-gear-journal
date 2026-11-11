@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever a file changes so phones pick up the update.
-const VERSION = "tennishub-v21";
+const VERSION = "tennishub-v22";
 const FILES = ["./", "index.html", "tension.js", "restring.js", "courts.js", "stringjobs.js", "shoes.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -47,6 +47,8 @@ self.addEventListener("notificationclick", e => {
   if (!url.startsWith(self.registration.scope)) { e.waitUntil(self.clients.openWindow(url)); return; }
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     const open = list.find(c => c.url.startsWith(self.registration.scope));
-    return open ? open.focus() : self.clients.openWindow(url);
+    // An open app goes to the notification's page (e.g. ?played=<booking>) and comes to the front.
+    if (open) return (url !== open.url && open.navigate ? open.navigate(url).then(c => (c || open).focus()) : open.focus());
+    return self.clients.openWindow(url);
   }));
 });

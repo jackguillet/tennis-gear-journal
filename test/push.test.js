@@ -76,8 +76,17 @@ test("a court request alerts the phone once, when GameTime opens it", async () =
   assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-17", "19:20", LA)) })).length, 1, "next week's");
   // Booked already, or long past the opening: nothing.
   await jack("POST", "/api/sync", { ops: [{ op: "booking.put", id: "alert-bk", start: zonedToUtc("2026-12-01", "18:00", LA), min: 75, tz: LA, kind: "singles", court: "Court 15" }] });
-  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-24", "19:20", LA)) })).length, 0);
-  assert.equal((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "21:00", LA)) })).length, 0);
+  assert.deepEqual(await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-11-24", "19:20", LA)) }), []);
+  // On the day: an hour before the 6-hour cancel cut-off (noon), then a "how was it?" after it ends.
+  sent.length = 0;
+  assert.deepEqual((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "10:30", LA)) })).map((x) => x.type), []);
+  assert.deepEqual((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "11:15", LA)) })).map((x) => x.type), ["cancel"]);
+  assert.equal(sent[0].title, "Still playing at 6:00 PM?"); assert.match(sent[0].body, /Cancel by 12:00 PM/);
+  assert.deepEqual(await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "11:45", LA)) }), [], "once");
+  assert.deepEqual(await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "19:00", LA)) }), [], "not while playing");
+  assert.deepEqual((await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "19:30", LA)) })).map((x) => x.type), ["played", "open"], "and Dec 8 just opened");
+  assert.equal(sent[1].title, "How was it?"); assert.match(sent[1].body, /Logged 75 min of singles on Blade/); assert.equal(sent[1].url, "./?played=alert-bk");
+  assert.deepEqual(await runCourtAlerts(db(), { send, now: new Date(zonedToUtc("2026-12-01", "21:00", LA)) }), []);
   await jack("POST", "/api/sync", { ops: [{ op: "plan.delete", id: "alert-tue" }, { op: "booking.cancel", id: "alert-bk" }] });
 });
 
