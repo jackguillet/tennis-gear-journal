@@ -265,3 +265,90 @@ export function requestStatus(plan, { bookings = [], waitlist = [], sheet = [], 
   const best = bestCourt(day, plan, { now, days: win.days, tz });
   return best ? { ...base, state: "open", best } : { ...base, state: "taken" };
 }
+
+// ---------- weather ----------
+// Seattle Tennis Club, for the forecast (Open-Meteo, no key needed).
+export const CLUB_LAT = 47.6316, CLUB_LON = -122.2788;
+export const forecastUrl = () => `https://api.open-meteo.com/v1/forecast?latitude=${CLUB_LAT}&longitude=${CLUB_LON}&hourly=precipitation_probability,temperature_2m&timezone=America%2FLos_Angeles&forecast_days=10`;
+// Courts that get rained on: everything that isn't indoor (outdoor 1 to 8, pro & clay 9 to 13).
+export const outdoorCourt = (court) => /\d/.test(court || "") && courtArea(court) !== "indoor";
+export const outdoorPlan = (plan) => (plan.court ? outdoorCourt(plan.court) : plan.area === "outdoor" || plan.area === "clay");
+// The chance of rain (highest hourly %) and the average temperature (°C) over a court time, from Open-Meteo's
+// hourly forecast (times are club wall clock, "2026-11-13T14:00"). Null when the forecast doesn't reach it.
+export function rainAt(forecast, start, min, tz = DEFAULT_TZ) {
+  const h = forecast && forecast.hourly;
+  if (!h || !Array.isArray(h.time)) return null;
+  const probs = [], temps = [];
+  h.time.forEach((t, i) => {
+    const at = zonedToUtc(t.slice(0, 10), t.slice(11, 16), tz);
+    if (at + 3600000 > start && at < start + min * 60000) {
+      if (h.precipitation_probability && h.precipitation_probability[i] != null) probs.push(h.precipitation_probability[i]);
+      if (h.temperature_2m && h.temperature_2m[i] != null) temps.push(h.temperature_2m[i]);
+    }
+  });
+  if (!probs.length) return null;
+  return { prob: Math.max(...probs), temp: temps.length ? Math.round(temps.reduce((a, b) => a + b, 0) / temps.length) : null };
+}
+// An indoor court open on the last sheet at (or within half an hour of) a time, to swap to when rain is likely.
+export function indoorSwap(sheet, start, { now = Date.now(), days = 7, tz = DEFAULT_TZ } = {}) {
+  const date = localDate(start, tz);
+  const t = Math.round((start - zonedToUtc(date, "00:00", tz)) / 60000);
+  return bestCourt((sheet || []).find((d) => d.date === date), { time: hm(t), area: "indoor" }, { now, days, tz });
+}
+
+// ---------- how fast courts go ----------
+// The button's scans, kept as how many courts were open at a time how long after GameTime opened it:
+// [{ dow, t (minute), area, bucket, open, seen }]. Buckets are the time since opening when it was seen.
+export const SPEED_BUCKETS = [["1h", 3600000, "an hour"], ["6h", 6 * 3600000, "6 hours"], ["1d", 86400000, "a day"], ["3d", 3 * 86400000, "3 days"], ["7d", 8 * 86400000, "the week"]];
+export function speedBucket(sinceOpen) {
+  if (sinceOpen < 0) return null;
+  const b = SPEED_BUCKETS.find(([, ms]) => sinceOpen < ms);
+  return b ? b[0] : null;
+}
+// A line on how fast a weekly time goes, or null until a few scans have seen it.
+export function speedSummary(stats, { dow, time, area = "any" }) {
+  const t0 = toMin(time);
+  const rows = (stats || []).filter((r) => r.dow === dow && Math.abs(r.t - t0) <= 15 && (area === "any" || r.area === area));
+  const by = SPEED_BUCKETS.map(([b, , label]) => {
+    const rs = rows.filter((r) => r.bucket === b);
+    const seen = rs.reduce((a, r) => a + r.seen, 0), open = rs.reduce((a, r) => a + r.open, 0);
+    return { b, label, seen, rate: seen ? open / seen : null };
+  }).filter((x) => x.seen >= 3);
+  if (!by.length || by.reduce((a, x) => a + x.seen, 0) < 10) return null;
+  const gone = by.find((x) => x.rate < 0.15);
+  if (gone) return gone.b === "1h" ? "Usually all taken within an hour of opening" : "Usually all taken within " + gone.label + " of opening";
+  const last = by[by.length - 1];
+  if (last.rate >= 0.5) return "Usually still easy to get " + (last.b === "1h" ? "after it opens" : last.label + " after it opens");
+  return "About " + Math.round(last.rate * 100) + "% of courts still open " + last.label + " after it opens";
+}
+
+// ---------- suggested requests ----------
+// Times booked on the same weekday and start in at least `min` different weeks lately, that no request
+// covers yet: [{ dow, time, min, court, area, count }], most booked first.
+export function suggestRequests(bookings, plans, { now = Date.now(), weeks = 6, min = 2, tz = DEFAULT_TZ } = {}) {
+  const since = now - weeks * 7 * 86400000, groups = new Map();
+  for (const b of bookings || []) {
+    if (b.cancelled || b.start < since || (b.location && b.location !== DEFAULT_LOCATION)) continue;
+    const date = localDate(b.start, tz), dow = weekday(date);
+    const t = Math.round((b.start - zonedToUtc(date, "00:00", tz)) / 60000);
+    const k = dow + "@" + t;
+    if (!groups.has(k)) groups.set(k, { dow, time: hm(t), min: b.min, courts: [], weeks: new Set() });
+    const g = groups.get(k); g.weeks.add(Math.floor((zonedToUtc(date, "12:00", tz) - 4 * 86400000) / (7 * 86400000))); if (b.court) g.courts.push(b.court);
+  }
+  const covered = (g) => (plans || []).some((p) => !p.date && p.dow === g.dow && Math.abs(toMin(p.time) - toMin(g.time)) <= 30);
+  return [...groups.values()].filter((g) => g.weeks.size >= min && !covered(g)).map((g) => {
+    const counts = {}; g.courts.forEach((c) => { counts[c] = (counts[c] || 0) + 1; });
+    const court = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return { dow: g.dow, time: g.time, min: g.min, court: court ? court[0] : null, area: court ? courtArea(court[0]) : "any", count: g.weeks.size };
+  }).sort((a, b) => b.count - a.count);
+}
+
+// ---------- send to partner ----------
+export function shareText(b, tz = DEFAULT_TZ) {
+  const start = new Date(b.start), end = new Date(b.start + b.min * 60000);
+  const day = start.toLocaleDateString("en-US", { timeZone: tz, weekday: "long", month: "short", day: "numeric" });
+  const t = (d) => d.toLocaleTimeString("en-US", { timeZone: tz, hour: "numeric", minute: "2-digit" });
+  const club = !b.location || b.location === DEFAULT_LOCATION;
+  return `Tennis ${day}, ${t(start)} to ${t(end)}` + (b.court ? `, ${b.court}` : "") + (club ? ` at ${CLUB_ADDRESS}.` : ` at ${b.location}.`)
+    + (club ? " Check in at the Pro Shop; mostly-white clothing." : "");
+}
