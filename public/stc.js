@@ -192,6 +192,14 @@
     return out.sort((a, b) => a.date.localeCompare(b.date) || a.start - b.start);
   }
 
+  // The member's own rows on the waitlist, without the other players' names.
+  function myWaitlist(rows, name) {
+    const me = String(name || "").toUpperCase().replace(/\s+/g, " ");
+    if (!me) return [];
+    return (rows || []).filter((w) => w.players.some((p) => p.toUpperCase().replace(/\s+/g, " ") === me))
+      .map((w) => ({ date: w.date, start: w.start, minutes: w.minutes, courts: w.courts.map((c) => String(c).replace(/\D/g, "")).filter(Boolean) }));
+  }
+
   // ---------- the club site's dining reservations (Jonas Clubhouse Online) ----------
   const DINING_API = "/api/v1/dining/";
   const DINING_PAGE = "/CMSModules/CHO/DiningReservations/Dining.aspx";
@@ -243,12 +251,22 @@
   // GameTime opens each court time `days` days before it ends, on the club's clock (a Friday 2:15 to
   // 3:30 pm court opens at 3:30 pm the Friday before). `opens` is when `next` opens: a date and minute.
   function planDays(plan, today, nowMin = -1, days = 7) {
-    let d = addDay(today, (plan.dow - dowOf(today) + 7) % 7);
     const startMin = +plan.time.slice(0, 2) * 60 + +plan.time.slice(3, 5), end = startMin + (Number(plan.min) || 60);
+    // A one-off request: just its date, or nothing once it has passed.
+    if (plan.date) {
+      if (plan.date < today || (plan.date === today && startMin <= nowMin)) return { bookable: null, next: null, opens: null };
+      const ahead = Math.round((Date.parse(plan.date) - Date.parse(today)) / 864e5);
+      const open = (ahead - days) * 1440 + end <= nowMin;
+      return { bookable: open ? plan.date : null, next: open ? null : plan.date, opens: open ? null : { date: addDay(plan.date, Math.floor(end / 1440) - days), min: end % 1440 } };
+    }
+    let d = addDay(today, (plan.dow - dowOf(today) + 7) % 7);
     if (d === today && startMin <= nowMin) d = addDay(d, 7);
+    // Skipped weeks are passed over.
+    for (let i = 0; i < 20 && (plan.skips || []).includes(d); i++) d = addDay(d, 7);
     const ahead = Math.round((Date.parse(d) - Date.parse(today)) / 864e5);
     const open = (ahead - days) * 1440 + end <= nowMin;
-    const next = open ? addDay(d, 7) : d;
+    let next = open ? addDay(d, 7) : d;
+    for (let i = 0; i < 20 && open && (plan.skips || []).includes(next); i++) next = addDay(next, 7);
     return { bookable: open ? d : null, next, opens: { date: addDay(next, Math.floor(end / 1440) - days), min: end % 1440 } };
   }
   // Open slots for a regular time, best first: the favourite court at (or near) the time, then the backup
@@ -321,7 +339,7 @@
   globalThis.SBM_GT = {
     sheetGrid, freeSlots, sheetCells,
     planDays, pickSlots, bookError, bookLimit,
-    openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
+    openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist, myWaitlist,
     jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
     upcomingUrl, eventsUrl, partnersUrl, waitlistUrl, bookUrl, sheetUrl, clock, hhmm,
   };
@@ -640,14 +658,15 @@
       const div = document.createElement("div"); div.className = "item";
       const startMin = +p.time.slice(0, 2) * 60 + +p.time.slice(3, 5);
       const head = document.createElement("b");
-      head.textContent = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow] + " " + clock(startMin) + " \u00b7 " + p.min + " min" + (p.court ? " \u00b7 " + p.court : p.area !== "any" ? " \u00b7 " + ({ indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" })[p.area] : "");
+      head.textContent = (p.date ? dayLabel(p.date) : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][p.dow]) + " " + clock(startMin) + " \u00b7 " + p.min + " min" + (p.court ? " \u00b7 " + p.court : p.area !== "any" ? " \u00b7 " + ({ indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" })[p.area] : "");
       div.appendChild(head);
       if (p.note || p.backups) { const m = document.createElement("div"); m.className = "meta"; m.textContent = [p.note, p.backups && "if taken: " + p.backups].filter(Boolean).join(" \u00b7 "); div.appendChild(m); }
       if (p.paused) { const m = document.createElement("div"); m.className = "meta"; m.textContent = "Paused. Resume it in Tennis Hub."; div.appendChild(m); box.appendChild(div); continue; }
       const { bookable, next, opens } = planDays(p, today, clubNowMin(), days);
+      if (!bookable && !next) continue; // a one-off that has passed
       const line = document.createElement("div"); line.className = "courts"; line.style.marginTop = "6px"; div.appendChild(line);
       const later = document.createElement("div"); later.className = "meta";
-      later.textContent = "Next: " + dayLabel(next) + ", opens " + opensAt(opens) + ".";
+      later.textContent = next ? (p.date ? "Opens " : "Next: " + dayLabel(next) + ", opens ") + opensAt(opens) + "." : "";
       box.appendChild(div);
       if (!bookable) { line.remove(); div.appendChild(later); continue; }
       const booked = mine.some((b) => b.date === bookable && Math.abs(+b.time.slice(0, 2) * 60 + +b.time.slice(3) - startMin) <= 90);
@@ -808,9 +827,24 @@
     }
   }
 
+  // The member's own places on the waitlist go to the app, so its requests can say "on the waitlist".
+  // Only rows with their name, and only the time and courts. Skipped when their name isn't known, so a
+  // failed read never clears what the app has.
+  async function sendWaitlist() {
+    if (!myName) return;
+    let rows;
+    try {
+      const r = await fetch(waitlistUrl, { credentials: "same-origin" });
+      if (!r.ok) return;
+      rows = parseWaitlist(await r.text()).filter((w) => w.date >= today);
+    } catch { return; }
+    const mine = myWaitlist(rows, myName);
+    await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, waitlist: mine }) }).catch(() => {});
+  }
+
   renderChips(); renderSlots();
   const mineDone = scanMine();
-  mineDone.finally(() => saveOpenCourts());
+  mineDone.finally(() => saveOpenCourts()).finally(() => sendWaitlist());
 
   // ---------- dinner after tennis (on seattletennisclub.org) ----------
   // Reads the club's dining availability with the member's own session and shows times after
