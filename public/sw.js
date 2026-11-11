@@ -1,5 +1,5 @@
 // Keeps the app working offline. Bump VERSION whenever a file changes so phones pick up the update.
-const VERSION = "tennishub-v20";
+const VERSION = "tennishub-v21";
 const FILES = ["./", "index.html", "tension.js", "restring.js", "courts.js", "stringjobs.js", "shoes.js", "manifest.webmanifest", "icons/apple-touch-icon.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", e => {
@@ -32,7 +32,7 @@ self.addEventListener("fetch", e => {
   })());
 });
 
-// Restring reminders (Web Push, sent by the daily check in lib/push.js).
+// Restring reminders and "book now" court alerts (Web Push, sent by the checks in lib/push.js).
 self.addEventListener("push", e => {
   let m = {};
   try { m = e.data ? e.data.json() : {}; } catch { m = { body: e.data && e.data.text() }; }
@@ -43,6 +43,8 @@ self.addEventListener("push", e => {
 self.addEventListener("notificationclick", e => {
   e.notification.close();
   const url = new URL((e.notification.data && e.notification.data.url) || "./", self.registration.scope).href;
+  // A "book now" alert goes straight to GameTime's booking form.
+  if (!url.startsWith(self.registration.scope)) { e.waitUntil(self.clients.openWindow(url)); return; }
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
     const open = list.find(c => c.url.startsWith(self.registration.scope));
     return open ? open.focus() : self.clients.openWindow(url);

@@ -709,7 +709,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
     </section>
     <section class="card" aria-labelledby="h-rem">
       <h2 id="h-rem">Reminders</h2>
-      <p class="small" id="push-text">Get a notification on this phone when strings or shoes are due. The check runs every morning.</p>
+      <p class="small" id="push-text">Get a notification on this phone when strings or shoes are due (checked every morning), and a "Book now" alert when GameTime opens a court you requested.</p>
       <div class="row-btns">
         <button class="btn" id="push-on" type="button">Turn on reminders</button>
         <button class="btn" id="push-test" type="button" hidden>Send a test</button>
@@ -2431,7 +2431,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const on = !!sub && Notification.permission === "granted";
     $("push-on").hidden = on; $("push-test").hidden = !on; $("push-off").hidden = !on;
     if (Notification.permission === "denied") $("push-text").textContent = "Notifications are blocked for this app. Turn them on in your phone's Settings, then Notifications, then Tennis Hub.";
-    else $("push-text").textContent = on ? "Reminders are on for this phone. Strings and shoes are checked every morning." : "Get a notification on this phone when strings or shoes are due. The check runs every morning.";
+    else $("push-text").textContent = on ? "Reminders are on for this phone. Strings and shoes are checked every morning." : "Get a notification on this phone when strings or shoes are due (checked every morning), and a "Book now" alert when GameTime opens a court you requested.";
   }
   $("push-on").onclick = async () => {
     pushErr(""); $("push-on").disabled = true;
