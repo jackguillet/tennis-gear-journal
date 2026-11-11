@@ -1,7 +1,7 @@
 import { db } from "../lib/db.js";
 import { ensureSchema } from "../lib/schema.js";
 import { userForToken } from "../lib/tokens.js";
-import { importBookings, upcomingBookings, planInfo, learnWindow, saveOpenCourts } from "../lib/gametime.js";
+import { importBookings, upcomingBookings, planInfo, learnWindow, saveOpenCourts, saveWaitlist } from "../lib/gametime.js";
 import { logFinishedBookings } from "../lib/bookings.js";
 
 // POST /api/gametime  (text/plain JSON { key, days, bookings }, or { key, list: true })
@@ -30,6 +30,8 @@ export async function POST(request) {
     if (body.list === true) return reply(request, { bookings: await upcomingBookings(store, user.id) });
     // How far ahead GameTime opens booking, as the button found it.
     if (body.window) await learnWindow(store, user.id, body.window);
+    // The member's own places on GameTime's waitlist.
+    if (Array.isArray(body.waitlist)) return reply(request, { saved: await saveWaitlist(store, user.id, body.waitlist) });
     // Free slots for the coming days (no names), for the app and chat assistants.
     if (body.open) return reply(request, { saved: await saveOpenCourts(store, user.id, body.open) });
     if (!Array.isArray(body.bookings)) return reply(request, await planInfo(store, user.id));

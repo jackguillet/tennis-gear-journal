@@ -60,7 +60,8 @@ export function planLink(plan, date, court = plan.court) {
 }
 export function planTitle(plan) {
   const t = toMin(plan.time), h = Math.floor(t / 60), m = t % 60;
-  return DAY_NAMES[plan.dow].slice(0, 3) + " " + ((h % 12) || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " am" : " pm") +
+  const day = plan.date ? new Date(plan.date + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) : DAY_NAMES[plan.dow].slice(0, 3);
+  return day + " " + ((h % 12) || 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? " am" : " pm") +
     " court" + (plan.court ? " (" + plan.court + ")" : plan.area && plan.area !== "any" ? " (" + AREA_NAMES[plan.area] + ")" : "");
 }
 // The coming days a regular time falls on, each with the moment the club opens booking for it.
@@ -70,8 +71,11 @@ export function planOpenings(plans, win, bookings = [], { now = Date.now(), week
   const out = [], today = localDate(now, tz);
   for (const p of plans || []) {
     if (p.paused) continue;
-    let d = addDays(today, (p.dow - weekday(today) + 7) % 7);
-    for (let i = 0; i < weeks + 1; i++, d = addDays(d, 7)) {
+    // A one-off request has just its date; a weekly one every week except the ones skipped.
+    let d = p.date || addDays(today, (p.dow - weekday(today) + 7) % 7);
+    if (p.date && p.date < today) continue;
+    for (let i = 0; i < (p.date ? 1 : weeks + 1); i++, d = addDays(d, 7)) {
+      if (!p.date && (p.skips || []).includes(d)) continue;
       const end = toMin(p.time) + (Number(p.min) || 60), day = addDays(d, Math.floor(end / 1440) - win.days), m = end % 1440;
       const start = zonedToUtc(d, p.time, tz), opensAt = zonedToUtc(day, String(Math.floor(m / 60)).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0"), tz);
       if (start <= now) continue;
@@ -240,4 +244,24 @@ export function comingUp(bookings, plans, win, { now = Date.now(), ahead = 8, tz
   const open = planOpenings(plans, win || { days: 7 }, bookings, { now, weeks: 1, tz }).filter((o) => !o.booked && o.start < until)
     .map((o) => ({ type: "plan", start: o.start, opening: o }));
   return [...booked, ...open].sort((a, b) => a.start - b.start);
+}
+
+// ---------- requests ----------
+// Where a request's next date stands: booked, on the waitlist, not open yet, open (with the best court
+// on the last sheet), taken (everything near the time is gone, so the waitlist is next) or unknown
+// (open, but the button hasn't read that day). Paused and finished requests have no next date.
+// `waitlist` is the player's own places: [{ date, start (minute), minutes }].
+export function requestStatus(plan, { bookings = [], waitlist = [], sheet = [], win = { days: 7 }, now = Date.now(), tz = DEFAULT_TZ } = {}) {
+  if (plan.paused) return { state: "paused" };
+  const [o] = planOpenings([plan], win, bookings, { now, weeks: 2, tz });
+  if (!o) return { state: "done" };
+  const base = { date: o.date, start: o.start, opensAt: o.opensAt };
+  if (o.booked) return { ...base, state: "booked" };
+  const t = toMin(plan.time);
+  if ((waitlist || []).some((w) => w.date === o.date && Math.abs(w.start - t) <= 30)) return { ...base, state: "waitlist" };
+  if (!o.open) return { ...base, state: "soon" };
+  const day = (sheet || []).find((d) => d.date === o.date);
+  if (!day) return { ...base, state: "unknown" };
+  const best = bestCourt(day, plan, { now, days: win.days, tz });
+  return best ? { ...base, state: "open", best } : { ...base, state: "taken" };
 }
