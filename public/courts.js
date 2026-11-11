@@ -148,3 +148,96 @@ export function toIcs(bookings, { name = "Tennis courts", now = Date.now(), meth
   ];
   return lines.map(fold).join("\r\n") + "\r\n";
 }
+
+// ---------- the court grid ----------
+// What the GameTime button last saw, one entry per day: { date, at (ms), courts: [{ c: "Court 15", i: "9",
+// cells: [[start minute, minutes, state]] }] }. State is o (open), b (taken), m (yours), l (lesson) or
+// e (club event). Nothing about who booked.
+export const AREA_ORDER = ["indoor", "outdoor", "clay"];
+export function courtArea(name) {
+  const n = +((/(\d+)/.exec(name || "") || [])[1]);
+  return n >= 14 ? "indoor" : n >= 9 ? "clay" : n >= 1 ? "outdoor" : "other";
+}
+const courtNo = (name) => +((/(\d+)/.exec(name || "") || [])[1]) || 0;
+// Parts of the day the grid can show.
+export const DAY_PARTS = { all: [0, 1440], morning: [0, 720], afternoon: [720, 1020], evening: [1020, 1440] };
+const hm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+
+// When GameTime opens a court time: `days` days before it ends, on the club's clock.
+export function opensAt(date, start, minutes, days = 7, tz = DEFAULT_TZ) {
+  const end = start + minutes;
+  return zonedToUtc(addDays(date, Math.floor(end / 1440) - days), hm(end % 1440), tz);
+}
+const CELL_STATE = { o: "open", b: "taken", m: "mine", l: "lesson", e: "event" };
+
+// One day of the grid, ready to draw: courts in area order (indoor, outdoor, pro & clay) and a row per
+// start time. Each cell is open, soon (open on the sheet but GameTime won't take it yet), taken, mine,
+// lesson, event, past or closed (not a court time). The player's own bookings in the app count as mine
+// even if the sheet is older than they are.
+export function gridDay(day, { areas = AREA_ORDER, part = "all", now = Date.now(), days = 7, bookings = [], tz = DEFAULT_TZ } = {}) {
+  if (!day) return { courts: [], rows: [] };
+  const [lo, hi] = DAY_PARTS[part] || DAY_PARTS.all;
+  const courts = (day.courts || []).filter((c) => areas.includes(courtArea(c.c)))
+    .sort((a, b) => AREA_ORDER.indexOf(courtArea(a.c)) - AREA_ORDER.indexOf(courtArea(b.c)) || courtNo(a.c) - courtNo(b.c));
+  const mine = (bookings || []).filter((b) => !b.cancelled && localDate(b.start, tz) === day.date && b.court);
+  const times = new Set();
+  courts.forEach((c) => c.cells.forEach(([t]) => { if (t >= lo && t < hi) times.add(t); }));
+  const rows = [...times].sort((a, b) => a - b).map((t) => {
+    const startAt = zonedToUtc(day.date, hm(t), tz);
+    return {
+      start: t,
+      cells: courts.map((c) => {
+        const cell = c.cells.find((x) => x[0] === t);
+        if (!cell) return { state: "closed" };
+        const [, min, s] = cell;
+        let state = CELL_STATE[s] || "taken";
+        if (mine.some((b) => courtNo(b.court) === courtNo(c.c) && b.start < startAt + min * 60000 && startAt < b.start + b.min * 60000)) state = "mine";
+        if (startAt <= now) state = "past"; // started already
+        const out = { state, minutes: min };
+        if (state === "open") {
+          const at = opensAt(day.date, t, min, days, tz);
+          if (at > now) { out.state = "soon"; out.opensAt = at; }
+        }
+        return out;
+      }),
+    };
+  }).filter((r) => r.cells.some((c) => c.state !== "closed" && c.state !== "past"));
+  return {
+    courts: courts.map((c, i) => ({ name: c.c, id: c.i, area: courtArea(c.c), first: i === 0 || courtArea(courts[i - 1].c) !== courtArea(c.c) })),
+    rows,
+  };
+}
+
+// The open court nearest a regular time on a day of the sheet: the favourite first, then the backups in
+// order, then any court in the area, within `within` minutes of the time. Null when nothing fits.
+export function bestCourt(day, plan, { within = 30, now = Date.now(), days = 7, tz = DEFAULT_TZ } = {}) {
+  if (!day) return null;
+  const want = [plan.court, ...String(plan.backups || "").split(/,\s*/)].filter(Boolean).map(courtNo);
+  const t0 = toMin(plan.time), out = [];
+  for (const c of day.courts || []) {
+    if (plan.area && plan.area !== "any" && courtArea(c.c) !== plan.area && !want.includes(courtNo(c.c))) continue;
+    for (const [t, min, s] of c.cells) {
+      if (s !== "o" || Math.abs(t - t0) > within) continue;
+      const startAt = zonedToUtc(day.date, hm(t), tz);
+      if (startAt <= now || opensAt(day.date, t, min, days, tz) > now) continue;
+      const rank = want.indexOf(courtNo(c.c));
+      out.push({ court: c.c, id: c.i, start: t, minutes: min, rank: rank < 0 ? want.length : rank, gap: Math.abs(t - t0) });
+    }
+  }
+  out.sort((a, b) => a.gap - b.gap || a.rank - b.rank || courtNo(a.court) - courtNo(b.court));
+  // An exact-time slot on a wanted court beats a nearer one elsewhere.
+  const exact = out.filter((x) => x.gap === 0).sort((a, b) => a.rank - b.rank)[0];
+  return exact || out[0] || null;
+}
+export const bookUrl = (courtId, date, start) => `${GT}/scheduling/index/book/sport/2/court/${courtId}/date/${date}/time/${start}`;
+export const WAITLIST_URL = `${GT}/scheduling/waitlist/new/sport/2`;
+export const SHEET_URL = `${GT}/scheduling/index/index/sport/2`;
+
+// "Coming up": booked courts and the regular times not yet booked in the next `ahead` days, by start.
+export function comingUp(bookings, plans, win, { now = Date.now(), ahead = 8, tz = DEFAULT_TZ } = {}) {
+  const until = now + ahead * 86400000;
+  const booked = (bookings || []).filter((b) => !b.cancelled && b.start + b.min * 60000 > now && b.start < until).map((b) => ({ type: "booking", start: b.start, booking: b }));
+  const open = planOpenings(plans, win || { days: 7 }, bookings, { now, weeks: 1, tz }).filter((o) => !o.booked && o.start < until)
+    .map((o) => ({ type: "plan", start: o.start, opening: o }));
+  return [...booked, ...open].sort((a, b) => a.start - b.start);
+}
