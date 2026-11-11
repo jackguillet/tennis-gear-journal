@@ -263,6 +263,45 @@ form.stack, .stack { display: flex; flex-direction: column; gap: 12px; }
 /* Courts */
 details.addform > summary { display: inline-flex; align-items: center; justify-content: center; border: 1.5px solid var(--court); color: var(--court); border-radius: 12px; padding: 8px 14px; font-size: 15px; min-height: 44px; }
 details.addform[open] > summary { margin-bottom: 12px; }
+#bk-past > summary { padding: 6px 0; }
+.gseen { color: var(--court); text-decoration: none; text-align: right; }
+.gchips { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding: 2px 0; }
+.gchips::-webkit-scrollbar { display: none; }
+.gchips button { flex: 0 0 auto; border: 1.5px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 6px 12px; min-height: 38px; font: 600 14px var(--f-body); cursor: pointer; white-space: nowrap; }
+.gchips button[aria-pressed="true"] { background: var(--court); border-color: var(--court); color: var(--panel); }
+.gchips button.nodata:not([aria-pressed="true"]) { color: var(--muted); border-style: dashed; }
+.gchips button small { font-weight: 500; opacity: .8; margin-left: 4px; }
+.gfilters { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.cgrid-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -16px; padding: 0 16px; }
+table.cgrid { border-collapse: separate; border-spacing: 3px; font: 600 12px var(--f-body); font-variant-numeric: tabular-nums; }
+table.cgrid th { color: var(--muted); font-weight: 600; padding: 0 2px; }
+table.cgrid thead th { font: 700 13px var(--f-display); color: var(--ink); min-width: 34px; }
+table.cgrid thead tr.areas th { font: 600 10.5px var(--f-body); text-transform: uppercase; letter-spacing: .07em; color: var(--muted); text-align: left; padding-left: 4px; }
+table.cgrid tbody th { position: sticky; left: 0; z-index: 1; background: var(--panel); text-align: right; white-space: nowrap; padding-right: 6px; font-size: 12.5px; }
+table.cgrid .gap { padding-left: 10px; }
+table.cgrid td { padding: 0; }
+table.cgrid td > * { display: grid; place-items: center; width: 100%; min-width: 34px; height: 34px; border-radius: 7px; border: 0; padding: 0; font: 700 11px var(--f-body); text-decoration: none; cursor: pointer; }
+.c-open { background: var(--good-soft); box-shadow: inset 0 0 0 1.5px var(--good); color: var(--good); }
+.c-soon { background: transparent; box-shadow: inset 0 0 0 1.5px var(--good); color: var(--good); background-image: repeating-linear-gradient(135deg, transparent 0 4px, var(--good-soft) 4px 8px); }
+.c-taken { background: var(--line); color: var(--muted); }
+.c-mine { background: var(--court); color: var(--panel); }
+.c-lesson { background: var(--warn-soft); color: var(--warn); }
+.c-event { background: var(--bad-soft); color: var(--bad); }
+.c-past, .c-closed { background: transparent; cursor: default !important; }
+.c-sel { outline: 3px solid var(--optic); outline-offset: 1px; }
+.gkey { font-size: 12.5px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.gkey .sw { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; font: 700 9px var(--f-body); margin-left: 6px; }
+.gkey .sw:first-child { margin-left: 0; }
+.gkey .sw.open { background: var(--good-soft); box-shadow: inset 0 0 0 1.5px var(--good); }
+.gkey .sw.soon { box-shadow: inset 0 0 0 1.5px var(--good); background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--good-soft) 3px 6px); }
+.gkey .sw.taken { background: var(--line); } .gkey .sw.mine { background: var(--court); }
+.gkey .sw.lesson { background: var(--warn-soft); color: var(--warn); } .gkey .sw.event { background: var(--bad-soft); color: var(--bad); }
+.gpick { font-size: 15px; background: var(--bg); border-radius: 12px; padding: 10px 12px; }
+.gpick a { color: var(--court); font-weight: 600; }
+ol.bookings li.plan { grid-template-columns: 1fr auto; }
+ol.bookings li.plan .t b { font-weight: 600; }
+a.btn.slim, ol.bookings a.btn { padding: 6px 12px; min-height: 38px; font-size: 14.5px; }
+.chip.cut { text-transform: none; letter-spacing: 0; font-size: 12px; }
 
 /* sign in */
 .brand { display: flex; align-items: center; gap: 12px; }
@@ -387,10 +426,23 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
   <!-- ===== Courts ===== -->
   <div class="tab" id="tab-courts" data-tab="courts" hidden>
     <div class="titlebar"><h1>Courts</h1><div class="tb-right"><span class="chip sync-chip" hidden></span><button class="me" type="button" data-go="settings" aria-label="Settings"></button></div></div>
+    <section class="card" aria-labelledby="h-grid" id="grid-card">
+      <div class="sect-head"><h2 id="h-grid">Open courts</h2><a class="small gseen" id="grid-seen" target="_blank" rel="noopener"></a></div>
+      <div class="gchips" id="grid-days" aria-label="Day"></div>
+      <div class="gfilters">
+        <div class="gchips" id="grid-areas" aria-label="Courts"></div>
+        <div class="gchips" id="grid-parts" aria-label="Time of day"></div>
+      </div>
+      <div class="cgrid-wrap" id="grid-wrap"></div>
+      <p class="gkey" id="grid-key" aria-hidden="true"><span class="sw open"></span>open, tap to book <span class="sw soon"></span>not open yet <span class="sw taken"></span>taken <span class="sw mine"></span>yours <span class="sw lesson">L</span>lesson <span class="sw event">E</span>event</p>
+      <p class="gpick" id="grid-pick" role="status" hidden></p>
+      <p class="empty" id="grid-empty" hidden></p>
+    </section>
     <section class="card" aria-labelledby="h-courts" id="courts">
-      <h2 id="h-courts">Booked</h2>
+      <h2 id="h-courts">Coming up</h2>
       <ol class="plays bookings" id="bookings"></ol>
-      <p class="empty" id="courts-line">No courts booked. Each booking goes in your court calendar, and once it ends the time is logged on your racket.</p>
+      <p class="empty" id="courts-line">Nothing booked in the next week. Each booking goes in your court calendar, and once it ends the time is logged on your racket.</p>
+      <details id="bk-past" hidden><summary class="small" id="bk-past-sum">Last two weeks</summary><ol class="plays bookings" id="past-bookings"></ol></details>
       <details id="bk-add" class="addform">
         <summary>Add a booking</summary>
         <div class="grid2">
@@ -402,7 +454,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
           <div class="field"><label for="bk-kind">Type of play</label>
             <select id="bk-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option><option value="ball_machine">Ball machine</option><option value="serves">Serves</option></select>
           </div>
-          <div class="field"><label for="bk-court">Court</label><input id="bk-court" type="text" maxlength="40" placeholder="e.g. Court 3"></div>
+          <div class="field"><label for="bk-court">Court</label><select id="bk-court"><option value="">Not sure</option><optgroup label="Indoor"><option>Court 14</option><option>Court 15</option><option>Court 16</option><option>Court 17</option><option>Court 18</option><option>Court 19</option></optgroup><optgroup label="Outdoor"><option>Court 1</option><option>Court 2</option><option>Court 3</option><option>Court 4</option><option>Court 5</option><option>Court 6</option><option>Court 7</option><option>Court 8</option></optgroup><optgroup label="Pro &amp; clay"><option>Court 9</option><option>Court 10</option><option>Court 11</option><option>Court 12</option><option>Court 13</option></optgroup></select></div>
           <div class="field"><label for="bk-racket">Racket</label><select id="bk-racket"></select></div>
         </div>
         <div class="row-btns" style="margin-top:12px"><button class="btn primary" id="bk-save" type="button">Save booking</button></div>
@@ -426,7 +478,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
           <div class="field"><label for="pl-area">Courts</label>
             <select id="pl-area"><option value="any">Any</option><option value="indoor">Indoor (14–19)</option><option value="outdoor">Outdoor (1–8)</option><option value="clay">Pro &amp; clay (9–13)</option></select>
           </div>
-          <div class="field"><label for="pl-court">Favourite court</label><input id="pl-court" type="text" maxlength="40" placeholder="e.g. Court 15"></div>
+          <div class="field"><label for="pl-court">Favourite court</label><select id="pl-court"><option value="">Any open court</option><optgroup label="Indoor"><option>Court 14</option><option>Court 15</option><option>Court 16</option><option>Court 17</option><option>Court 18</option><option>Court 19</option></optgroup><optgroup label="Outdoor"><option>Court 1</option><option>Court 2</option><option>Court 3</option><option>Court 4</option><option>Court 5</option><option>Court 6</option><option>Court 7</option><option>Court 8</option></optgroup><optgroup label="Pro &amp; clay"><option>Court 9</option><option>Court 10</option><option>Court 11</option><option>Court 12</option><option>Court 13</option></optgroup></select></div>
           <div class="field"><label for="pl-kind">Type of play</label>
             <select id="pl-kind"><option value="singles">Singles</option><option value="doubles">Doubles</option><option value="hitting">Hitting</option><option value="drills">Lesson / drills</option></select>
           </div>
@@ -794,7 +846,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 <script type="module">
 import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
-import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle } from "./courts.js";
+import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, bookUrl, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
 import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
 import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings } from "./stringjobs.js";
 (() => {
@@ -828,10 +880,11 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   let shoes = [];         // pairs of tennis shoes, newest last
   let plans = [];         // regular weekly court times
   let bookWindow = { days: 7, set: false }; // GameTime opens each court time this many days before it ends
+  let courtSheet = [];    // the court sheet the GameTime button last saw: [{ date, at, courts }]
   // The device keeps a copy of everything plus a queue of changes not yet on the server ("outbox"),
   // so the app works with no signal and catches up later.
   let outbox = lsGet(key("outbox"), []);
-  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("shoes"), shoes); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); }
+  function localSave() { if (!user) return; lsSet(key("rackets"), rackets); lsSet(key("outbox"), outbox); lsSet(key("profile"), profile); lsSet(key("bookings"), bookings); lsSet(key("shoes"), shoes); lsSet(key("plans"), plans); lsSet(key("window"), bookWindow); lsSet(key("sheet"), courtSheet); }
 
   const racketData = r => ({
     name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
@@ -964,6 +1017,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       if (body.shoes) shoes = body.shoes;
       if (body.plans) plans = body.plans;
       if (body.window) bookWindow = body.window;
+      if (body.courtSheet) courtSheet = body.courtSheet;
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
@@ -1443,38 +1497,198 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
   }
   const CAL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4M12 13v5M9.5 15.5h5"/></svg>';
+  function bookingItem(b, now) {
+    const done = b.start + b.min * 60000 <= now;
+    const li = document.createElement("li"); if (done) li.className = "past";
+    const t = document.createElement("span"); t.className = "t";
+    const w = document.createElement("b"); w.textContent = bkWhen(b);
+    const r = b.racketId && rackets[b.racketId] ? " · " + rackets[b.racketId].name : "";
+    const more = document.createElement("small"); more.textContent = bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : "");
+    t.append(w, more);
+    // The club's 6-hour cancel rule, as a chip that turns amber on the day and red once it has passed.
+    const cut = cancelBy(b);
+    if (!done && cut) {
+      const c = document.createElement("span"); c.className = "chip cut " + (cut <= now ? "bad" : cut - now < 864e5 ? "warn" : "");
+      c.textContent = cut > now ? "Cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : "Too late to cancel";
+      const line = document.createElement("span"); line.style.display = "block"; line.style.marginTop = "4px"; line.appendChild(c); t.appendChild(line);
+    }
+    const k = document.createElement("span"); k.className = "k"; k.textContent = dur(b.min);
+    const cal = document.createElement("button"); cal.type = "button"; cal.innerHTML = CAL_ICON; cal.setAttribute("aria-label", "Add this booking to your calendar");
+    cal.onclick = () => downloadIcs(b);
+    const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this booking");
+    del.onclick = () => {
+      if (!confirm("Remove this booking from the app and your calendar? It isn't cancelled with the club; do that in GameTime.")) return;
+      queue({ op: "booking.cancel", id: b.id }); applyLocal({ op: "booking.cancel", id: b.id }); localSave(); renderBookings();
+    };
+    li.append(t, k, cal, del);
+    return li;
+  }
+  // A regular time in the coming week that isn't booked yet: when it opens, or the court to book now.
+  function openingItem(o, now) {
+    const li = document.createElement("li"); li.className = "plan";
+    const t = document.createElement("span"); t.className = "t";
+    const w = document.createElement("b"); w.textContent = new Date(o.start).toLocaleString(undefined, { timeZone: clubTz(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    const more = document.createElement("small");
+    const where = o.plan.court || (o.plan.area && o.plan.area !== "any" ? { indoor: "indoor", outdoor: "outdoor", clay: "pro & clay" }[o.plan.area] : "any court");
+    more.textContent = "Every week · " + where + (o.plan.note ? " · with " + o.plan.note : "") + " · not booked yet";
+    t.append(w, more);
+    li.appendChild(t);
+    if (!o.open) {
+      const c = document.createElement("span"); c.className = "chip cut";
+      c.textContent = "Opens " + new Date(o.opensAt).toLocaleString(undefined, { timeZone: clubTz(), weekday: o.opensAt - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" });
+      li.appendChild(c);
+    } else {
+      const day = courtSheet.find(d => d.date === o.date);
+      const best = bestCourt(day, o.plan, { now, days: bookWindow.days });
+      const a = document.createElement("a"); a.className = "btn primary"; a.target = "_blank"; a.rel = "noopener";
+      a.style.background = "var(--court)"; a.style.color = "var(--panel)";
+      if (best) { a.href = bookUrl(best.id, o.date, best.start); a.textContent = "Book " + best.court.replace(/^Court\s*/i, "Ct ") + (best.start !== toMinutes(o.plan.time) ? " · " + clockMin(best.start) : ""); }
+      else if (day) { a.href = WAITLIST_URL; a.textContent = "Taken: waitlist"; a.style.background = "transparent"; a.style.color = "var(--court)"; }
+      else { a.href = planLink(o.plan, o.date); a.textContent = "Book now"; }
+      li.appendChild(a);
+    }
+    return li;
+  }
+  const toMinutes = t => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+  const clockMin = m => { const h = Math.floor(m / 60) % 24, mi = m % 60; return ((h % 12) || 12) + (mi ? ":" + String(mi).padStart(2, "0") : "") + (h < 12 ? " am" : " pm"); };
   function renderBookings() {
-    $("courts").hidden = !user;
+    $("courts").hidden = !user; $("grid-card").hidden = !user;
     const ol = $("bookings"); ol.textContent = "";
     const now = Date.now();
-    bookings.forEach(b => {
-      const done = b.start + b.min * 60000 <= now;
-      const li = document.createElement("li"); if (done) li.className = "past";
-      const t = document.createElement("span"); t.className = "t";
-      const w = document.createElement("b"); w.textContent = bkWhen(b);
-      const r = b.racketId && rackets[b.racketId] ? " · " + rackets[b.racketId].name : "";
-      const cut = cancelBy(b);
-      const cancelNote = !done && cut ? (cut > now ? " · cancel by " + new Date(cut).toLocaleString(undefined, { timeZone: b.tz || clubTz(), weekday: cut - now > 864e5 ? "short" : undefined, hour: "numeric", minute: "2-digit" }) : " · past the 6-hour cancel cut-off") : "";
-      const more = document.createElement("small"); more.textContent = bookingTitle(b).replace(/^Tennis: /, "") + r + (b.playId ? " · logged" : done ? " · logs on next sync" : cancelNote);
-      t.append(w, more);
-      const k = document.createElement("span"); k.className = "k"; k.textContent = dur(b.min);
-      const cal = document.createElement("button"); cal.type = "button"; cal.innerHTML = CAL_ICON; cal.setAttribute("aria-label", "Add this booking to your calendar");
-      cal.onclick = () => downloadIcs(b);
-      const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this booking");
-      del.onclick = () => {
-        if (!confirm("Remove this booking from the app and your calendar? It isn't cancelled with the club; do that in GameTime.")) return;
-        queue({ op: "booking.cancel", id: b.id }); applyLocal({ op: "booking.cancel", id: b.id }); localSave(); renderBookings();
-      };
-      li.append(t, k, cal, del); ol.appendChild(li);
-    });
-    $("courts-line").hidden = bookings.length > 0;
+    const items = comingUp(bookings, plans, bookWindow, { now });
+    items.forEach(x => ol.appendChild(x.type === "booking" ? bookingItem(x.booking, now) : openingItem(x.opening, now)));
+    // Booked further out than the coming week still shows, after it.
+    bookings.filter(b => b.start >= now + 8 * 864e5).forEach(b => ol.appendChild(bookingItem(b, now)));
+    const past = bookings.filter(b => b.start + b.min * 60000 <= now).reverse();
+    const pol = $("past-bookings"); pol.textContent = "";
+    past.forEach(b => pol.appendChild(bookingItem(b, now)));
+    $("bk-past").hidden = !past.length; $("bk-past-sum").textContent = "Last two weeks (" + past.length + ")";
+    $("courts-line").hidden = ol.children.length > 0;
     const sel = $("bk-racket"), keep = sel.value; sel.textContent = "";
     const auto = document.createElement("option"); auto.value = ""; auto.textContent = "Most recently used"; sel.appendChild(auto);
     Object.entries(rackets).forEach(([id, r]) => { const o = document.createElement("option"); o.value = id; o.textContent = r.name; sel.appendChild(o); });
     sel.value = rackets[keep] ? keep : "";
     if (!$("bk-date").value) $("bk-date").value = today();
-    renderPlans(); renderViews();
+    renderPlans(); renderGrid(); renderViews();
   }
+  // ---------- the court grid ----------
+  // Drawn from the court sheet the GameTime button last saw (no names): every court and time for one
+  // day, open (tap to go to GameTime's booking form), not open yet, taken, yours, a lesson or an event.
+  const AREA_LABEL = { indoor: "Indoor", outdoor: "Outdoor", clay: "Pro & clay" };
+  const PARTS = [["all", "All day"], ["morning", "Morning"], ["afternoon", "Afternoon"], ["evening", "Evening"]];
+  let gridPick = null; // { date, court, start } of the cell tapped last
+  const addDay = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  function gridChips(box, items, isOn, onTap) {
+    box.textContent = "";
+    items.forEach(([v, label, extra, cls]) => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = label;
+      if (extra) { const sm = document.createElement("small"); sm.textContent = extra; b.appendChild(sm); }
+      if (cls) b.className = cls;
+      b.setAttribute("aria-pressed", String(isOn(v))); b.onclick = () => onTap(v); box.appendChild(b);
+    });
+  }
+  function renderGrid() {
+    if (!user) return;
+    const now = Date.now(), first = localDate(now, clubTz());
+    const days = Array.from({ length: 8 }, (_, i) => addDay(first, i));
+    let day = days.includes(prefs.gridDay) ? prefs.gridDay : first;
+    const areas = Array.isArray(prefs.gridAreas) && prefs.gridAreas.length ? prefs.gridAreas.filter(a => AREA_ORDER.includes(a)) : ["indoor", "outdoor"];
+    const part = PARTS.some(([p]) => p === prefs.gridPart) ? prefs.gridPart : "all";
+    const label = (d, i) => i === 0 ? "Today" : i === 1 ? "Tomorrow" : new Date(d + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short", timeZone: "UTC" });
+    gridChips($("grid-days"), days.map((d, i) => [d, label(d, i), i > 1 ? String(+d.slice(8)) : "", courtSheet.some(x => x.date === d) ? "" : "nodata"]), d => d === day,
+      d => { prefs.gridDay = d; savePrefs(); gridPick = null; renderGrid(); });
+    gridChips($("grid-areas"), AREA_ORDER.map(a => [a, AREA_LABEL[a]]), a => areas.includes(a), a => {
+      const next = areas.includes(a) ? areas.filter(x => x !== a) : areas.concat([a]);
+      if (!next.length) return;
+      prefs.gridAreas = next; savePrefs(); renderGrid();
+    });
+    gridChips($("grid-parts"), PARTS, p => p === part, p => { prefs.gridPart = p; savePrefs(); renderGrid(); });
+
+    const sheetDay = courtSheet.find(x => x.date === day);
+    const seen = $("grid-seen"); seen.href = SHEET_URL;
+    const latest = courtSheet.reduce((m, x) => Math.max(m, x.at || 0), 0);
+    seen.textContent = sheetDay ? "Seen " + ago(sheetDay.at) + " · refresh" : latest ? "Refresh on GameTime" : "";
+    seen.title = "Open GameTime and tap your STC courts button to read the latest sheet";
+    const wrap = $("grid-wrap"); wrap.textContent = "";
+    const empty = $("grid-empty");
+    const g = gridDay(sheetDay, { areas, part, now, days: bookWindow.days, bookings, tz: clubTz() });
+    $("grid-key").hidden = !g.rows.length;
+    if (!g.rows.length) {
+      empty.hidden = false; $("grid-pick").hidden = true;
+      empty.textContent = "";
+      if (!latest) {
+        empty.append("Courts show up here once your STC courts button has read GameTime. Open ");
+        const a = document.createElement("a"); a.href = SHEET_URL; a.target = "_blank"; a.rel = "noopener"; a.textContent = "GameTime"; empty.appendChild(a);
+        empty.append(", sign in and tap the button. ");
+        const set = document.createElement("button"); set.type = "button"; set.className = "linkbtn"; set.textContent = "Set up the button";
+        set.dataset.go = "settings"; set.dataset.open = "gt-sub"; empty.appendChild(set);
+      } else if (!sheetDay) empty.textContent = "The button hasn't read this day yet. Tap it on GameTime to fill in the week.";
+      else empty.textContent = "No court times left " + (part === "all" ? "that day" : "in the " + part) + " on these courts.";
+      return;
+    }
+    empty.hidden = true;
+    const tbl = document.createElement("table"); tbl.className = "cgrid";
+    const head = document.createElement("thead");
+    // Area names over their courts, then the court numbers.
+    const ar = document.createElement("tr"); ar.className = "areas"; ar.appendChild(document.createElement("th"));
+    g.courts.forEach((c, i) => {
+      if (!c.first) return;
+      let span = 1; while (g.courts[i + span] && !g.courts[i + span].first) span++;
+      const th = document.createElement("th"); th.colSpan = span; th.textContent = AREA_LABEL[c.area] || ""; if (i) th.className = "gap"; ar.appendChild(th);
+    });
+    const nr = document.createElement("tr"); nr.appendChild(document.createElement("th"));
+    g.courts.forEach((c, i) => { const th = document.createElement("th"); th.scope = "col"; th.textContent = c.name.replace(/^Court\s*/i, ""); if (c.first && i) th.className = "gap"; nr.appendChild(th); });
+    head.append(ar, nr); tbl.appendChild(head);
+    const body = document.createElement("tbody");
+    const TXT = { mine: "You", lesson: "L", event: "E" };
+    const NAME = { soon: "not open yet", taken: "taken", mine: "your booking", lesson: "lesson time", event: "club event" };
+    g.rows.forEach(r => {
+      const tr = document.createElement("tr");
+      const th = document.createElement("th"); th.scope = "row"; th.textContent = clockMin(r.start); tr.appendChild(th);
+      r.cells.forEach((cell, i) => {
+        const c = g.courts[i], td = document.createElement("td"); if (c.first && i) td.className = "gap";
+        const sel = gridPick && gridPick.date === day && gridPick.court === c.name && gridPick.start === r.start;
+        let el;
+        if (cell.state === "open") {
+          el = document.createElement("a"); el.href = bookUrl(c.id, day, r.start); el.target = "_blank"; el.rel = "noopener";
+          el.setAttribute("aria-label", "Book " + c.name + " at " + clockMin(r.start) + ", " + cell.minutes + " minutes");
+        } else if (cell.state === "past" || cell.state === "closed") {
+          el = document.createElement("span");
+        } else {
+          el = document.createElement("button"); el.type = "button"; el.textContent = TXT[cell.state] || "";
+          el.setAttribute("aria-label", c.name + " at " + clockMin(r.start) + ": " + NAME[cell.state]);
+          el.onclick = () => { gridPick = { date: day, court: c.name, start: r.start, id: c.id, cell }; renderGrid(); };
+        }
+        el.className = "c-" + cell.state + (sel ? " c-sel" : "");
+        td.appendChild(el); tr.appendChild(td);
+      });
+      body.appendChild(tr);
+    });
+    tbl.appendChild(body); wrap.appendChild(tbl);
+    renderGridPick(day);
+  }
+  // What a tapped cell means, and what can be done about it.
+  function renderGridPick(day) {
+    const box = $("grid-pick"); box.textContent = "";
+    if (!gridPick || gridPick.date !== day) { box.hidden = true; return; }
+    const { court, start, cell } = gridPick;
+    const when = new Date(day + "T12:00:00Z").toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" }) + " " + clockMin(start);
+    const b = document.createElement("b"); b.textContent = court + " · " + when + ": "; box.appendChild(b);
+    const link = (text, href) => { const a = document.createElement("a"); a.href = href; a.target = "_blank"; a.rel = "noopener"; a.textContent = text; return a; };
+    if (cell.state === "soon") {
+      box.append("open, but GameTime only takes it from " + new Date(cell.opensAt).toLocaleString(undefined, { timeZone: clubTz(), weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) + ". ");
+      box.appendChild(link("Its booking form", bookUrl(gridPick.id, day, start)));
+    } else if (cell.state === "taken") {
+      box.append("taken. If it's cancelled, GameTime offers it to the first group on its waitlist. ");
+      box.appendChild(link("Join the waitlist", WAITLIST_URL));
+    } else if (cell.state === "mine") box.append("your booking.");
+    else if (cell.state === "lesson") box.append("lesson time a pro is holding. The Pro Shop can say if it's free: (206) 324-5454.");
+    else if (cell.state === "event") box.append("a club event or clinic.");
+    box.hidden = false;
+  }
+  // Coming back to the app (for example from GameTime) picks up the newest sheet.
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && prefs.tab === "courts") syncSoon(); });
+
   function renderPlans() {
     const ol = $("plans"); ol.textContent = "";
     plans.forEach(p => {
@@ -1488,10 +1702,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const edit = document.createElement("button"); edit.type = "button"; edit.className = "linkbtn"; edit.textContent = "Edit";
       edit.onclick = () => editPlan(p);
       const pause = document.createElement("button"); pause.type = "button"; pause.className = "linkbtn"; pause.textContent = p.paused ? "Resume" : "Pause";
-      pause.onclick = () => { const q = { ...p, paused: !p.paused }; queue({ op: "plan.put", ...q }); applyLocal({ op: "plan.put", ...q }); localSave(); renderPlans(); };
+      pause.onclick = () => { const q = { ...p, paused: !p.paused }; queue({ op: "plan.put", ...q }); applyLocal({ op: "plan.put", ...q }); localSave(); renderBookings(); };
       acts.append(edit, pause);
       const del = document.createElement("button"); del.type = "button"; del.textContent = "×"; del.setAttribute("aria-label", "Remove this regular time");
-      del.onclick = () => { if (!confirm("Remove " + planTitle(p) + "?")) return; queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); if (editing === p.id) editPlan(null); renderPlans(); };
+      del.onclick = () => { if (!confirm("Remove " + planTitle(p) + "?")) return; queue({ op: "plan.delete", id: p.id }); applyLocal({ op: "plan.delete", id: p.id }); localSave(); if (editing === p.id) editPlan(null); renderBookings(); };
       li.append(t, acts, del); ol.appendChild(li);
     });
     const n = bookWindow.days;
@@ -1719,7 +1933,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     $("pl-dow").value = p ? p.dow : 1; $("pl-time").value = p ? p.time : "18:00"; $("pl-len").value = p ? p.min : 75;
     if (p && ![...$("pl-len").options].some(o => +o.value === p.min)) $("pl-len").add(new Option(dur(p.min), p.min));
     $("pl-len").value = p ? p.min : 75;
-    $("pl-area").value = p ? p.area : "any"; $("pl-court").value = p ? p.court || "" : ""; $("pl-kind").value = p ? p.kind : "singles";
+    $("pl-area").value = p ? p.area : "any"; setCourt($("pl-court"), p ? p.court : ""); $("pl-kind").value = p ? p.kind : "singles";
     $("pl-backups").value = p ? p.backups || "" : ""; $("pl-note").value = p ? p.note || "" : "";
     plErr("");
     if (p) { $("plan-sub").open = true; $("plan-sub").scrollIntoView({ behavior: "smooth", block: "start" }); }
@@ -1734,8 +1948,14 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       backups: courtList($("pl-backups").value), paused: was ? !!was.paused : false };
     if (p.backups === false) { plErr("Backup courts: up to 6, like 15, 14, 16."); return; }
     queue({ op: "plan.put", ...p }); applyLocal({ op: "plan.put", ...p }); localSave();
-    editPlan(null); renderPlans();
+    editPlan(null); renderBookings();
   };
+  // Picks a court in a court list, adding it first if it isn't one of STC's (an older free-text entry).
+  function setCourt(sel, v) {
+    v = v || "";
+    if (v && ![...sel.options].some(o => o.value === v)) { const o = document.createElement("option"); o.value = o.textContent = v; sel.appendChild(o); }
+    sel.value = v;
+  }
   // "15, ct 14" -> "Court 15, Court 14"; false when it can't be read.
   function courtList(v) {
     const list = String(v || "").split(/[,;/]+/).map(x => x.trim()).filter(Boolean)
@@ -1746,7 +1966,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   const saveWindow = () => {
     const days = Math.round(+$("win-days").value);
     if (!(days >= 1 && days <= 30)) { plErr("Booking opens 1 to 30 days before a court time ends."); return; }
-    plErr(""); queue({ op: "window.put", days }); applyLocal({ op: "window.put", days }); localSave(); renderPlans();
+    plErr(""); queue({ op: "window.put", days }); applyLocal({ op: "window.put", days }); localSave(); renderBookings();
   };
   $("win-days").addEventListener("change", saveWindow);
   $("play-date").addEventListener("change", e => { playDatePicked = !!e.target.value && e.target.value !== today(); });
@@ -1978,6 +2198,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     bookings = lsGet(key("bookings"), []);
     shoes = lsGet(key("shoes"), []);
     plans = lsGet(key("plans"), []); bookWindow = lsGet(key("window"), { days: 7, set: false }); if (bookWindow.time) bookWindow = { days: 7, set: false };
+    courtSheet = lsGet(key("sheet"), []);
     if (user) adoptOldCopy();
     boot(localLoad());
     renderSync();

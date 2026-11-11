@@ -35,7 +35,7 @@ Editing a booking: `GET /scheduling/index/editbooking/sport/2/conf/<conf>?bk=<bk
 
 ## How the app uses this
 
-`public/stc.js` (the GameTime button) runs on stc.gametime.net in the member's own browser. It reads `jsoncourtdata` for groups 2, 3 and 4 and shows open slots. Every slot links to GameTime's booking form. It also picks out the member's own bookings: `b.e` is the booker's member id, `b.f` is the confirmation number, and the member id comes from `cv.setUserId(<id>)` in the page. It reads 7 days × 3 areas one request at a time and posts the member's bookings to `/api/gametime`. Nothing is sent to the server about other members except the names of the member's own partners on their own bookings.
+`public/stc.js` (the GameTime button) runs on stc.gametime.net in the member's own browser. It reads `jsoncourtdata` for groups 2, 3 and 4 and shows open slots. Every slot links to GameTime's booking form. It also picks out the member's own bookings: `b.e` is the booker's member id, `b.f` is the confirmation number, and the member id comes from `cv.setUserId(<id>)` in the page. It reads 7 days × 3 areas one request at a time and posts the member's bookings to `/api/gametime`, plus each day's sheet reduced to open / taken / yours / lesson / event per court time (`sheetCells`) for the app's court grid. Nothing is sent to the server about other members except the names of the member's own partners on their own bookings.
 
 ## Other GameTime feeds (second recording, 2026-10-28)
 

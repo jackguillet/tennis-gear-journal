@@ -306,8 +306,20 @@
       .map((x) => ({ c: x.court, i: x.courtId, t: x.start, d: x.minutes }));
   }
 
+  // Every court time on a day's sheets as open, taken, yours, a lesson or a club event, for the app's
+  // court grid: [{ c: court, i: GameTime court id, cells: [[start, minutes, "o"|"b"|"m"|"l"|"e"]] }].
+  // Like freeSlots, nothing about who booked.
+  const CELL_CODE = { open: "o", booked: "b", mine: "m", lesson: "l", event: "e" };
+  function sheetCells(sheets, userId) {
+    const g = sheetGrid(sheets, userId);
+    return g.courts.map((c, i) => ({
+      c: c.name, i: c.id,
+      cells: g.rows.filter((r) => r.cells[i].state !== "closed").map((r) => [r.start, r.cells[i].minutes, CELL_CODE[r.cells[i].state] || "b"]),
+    }));
+  }
+
   globalThis.SBM_GT = {
-    sheetGrid, freeSlots,
+    sheetGrid, freeSlots, sheetCells,
     planDays, pickSlots, bookError, bookLimit,
     openSlots, myBookings, parseUpcoming, parseEvents, parsePartners, levelRange, parseLessons, parseWaitlist,
     jonasDate, wallMin, diningDates, parseDiningSlots, parseAvailability, playDays,
@@ -524,15 +536,15 @@
     wrap.appendChild(tbl); box.appendChild(wrap);
   }
 
-  // The coming week's free slots (free or taken only, no names) go to the app, so it and a chat
-  // assistant can say what's open. At most every 20 minutes, one sheet at a time.
+  // The coming week's court sheet (free or taken only, no names) goes to the app, for its court grid
+  // and so a chat assistant can say what's open. At most every 5 minutes, one sheet at a time.
   async function saveOpenCourts() {
-    try { if (Date.now() - Number(localStorage.getItem("sbm-gt-open-at") || 0) < 20 * 60000) return; } catch {}
+    try { if (Date.now() - Number(localStorage.getItem("sbm-gt-open-at") || 0) < 5 * 60000) return; } catch {}
     const out = [];
     for (const d of days) {
       const sheets = [];
       for (const [g] of GROUPS) { try { sheets.push(await sheet(d, g)); } catch { return; } }
-      out.push({ date: d, slots: freeSlots(sheets).filter((x) => d !== today || x.t > clubNowMin()) });
+      out.push({ date: d, slots: freeSlots(sheets).filter((x) => d !== today || x.t > clubNowMin()), grid: sheetCells(sheets, userId) });
     }
     const r = await fetch(cfg.api, { method: "POST", headers: { "content-type": "text/plain" }, body: JSON.stringify({ key: cfg.key, open: { at: Date.now(), days: out } }) }).catch(() => null);
     if (r && r.ok) try { localStorage.setItem("sbm-gt-open-at", String(Date.now())); } catch {}
