@@ -870,7 +870,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 </nav>
 
 <script type="module">
-import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, bandpass } from "./tension.js";
+import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, combineTaps, bandpass } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, requestStatus, bookUrl, forecastUrl, rainAt, outdoorCourt, outdoorPlan, indoorSwap, speedSummary, shareText, DAY_NAMES, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
 import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
@@ -1981,7 +1981,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // iOS only lets audio start inside the tap, so make the context before waiting on the microphone
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
     } catch (e) {
       try { ctx.close(); } catch {}
       setStatus(e && e.name === "NotAllowedError"
@@ -1989,40 +1989,70 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
         : "The microphone couldn't start. Upload a recording of 3 or 4 taps instead.", true);
       return;
     }
-    if (ctx.state === "suspended") await ctx.resume();
+    const track = stream.getAudioTracks()[0], set = (track && track.getSettings && track.getSettings()) || {};
+    // Safari can run the microphone at 44.1 kHz while the audio context runs at 48 kHz. When the two
+    // disagree, WebKit has delivered pitch-shifted or gappy sound, which reads about 9% off in pitch
+    // (18% in tension). So run the context at the microphone's own rate.
+    if (set.sampleRate && Math.abs(set.sampleRate - ctx.sampleRate) > 1) {
+      try {
+        const c2 = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: set.sampleRate });
+        try { ctx.close(); } catch {}
+        ctx = c2;
+      } catch {}
+    }
+    if (ctx.state === "suspended") { try { await ctx.resume(); } catch {} }
+    // AirPods and other headsets take over as the microphone when connected: in your ears, they
+    // can't hear the strings, and their voice mic cuts out sound like a ring.
+    const label = (track && track.label) || "";
+    const headset = /airpods|bluetooth|headset|headphone|beats|buds|hands-free|hfp/i.test(label);
     liveTaps = [];
     const src = ctx.createMediaStreamSource(stream), sr = ctx.sampleRate;
-    // Taps are found on a band-passed copy (the band string beds ring in), so a quiet fingertip
-    // ring still stands out from room rumble and handling noise. The analysis uses the raw sound.
-    const ring = new Float32Array(Math.round(sr * 1.0)), bp = bandpass(sr);
-    let w = 0, noise = 0.001, armedAt = -1, cool = 0, filled = 0;
+    // Taps are found on a band-passed copy (the band string beds ring in), so a quiet ring still
+    // stands out from room rumble and handling noise. The analysis uses the raw sound.
+    const ring = new Float32Array(Math.round(sr * 1.5)), bp = bandpass(sr);
+    let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0, nextTime = -1, lastGap = -Infinity;
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
       const d = ev.inputBuffer.getChannelData(0); let pk = 0;
+      // If the phone was too busy and a block of sound went missing, a tap spanning it can't be trusted.
+      if (nextTime >= 0 && ev.playbackTime - nextTime > 0.5 * d.length / sr) lastGap = filled;
+      nextTime = ev.playbackTime + d.length / sr;
       for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
       filled += d.length;
+      const thr = Math.max(0.0015, noise * 5);
       if (armedAt < 0) {
         if (cool > 0) cool -= d.length;
-        else if (pk > Math.max(0.0015, noise * 5)) armedAt = filled - d.length;
+        else if (pk > thr) { armedAt = filled - d.length; armPk = pk; }
         else noise = noise * 0.9 + pk * 0.1;
-      } else if (filled - armedAt > 0.32 * sr) {
-        // just this tap: from 40 ms before it was heard to now
-        const n = Math.min(ring.length, filled - armedAt + Math.round(0.04 * sr)), seg = new Float32Array(n);
-        for (let i = 0; i < n; i++) seg[i] = ring[(w - n + i + ring.length) % ring.length];
-        armedAt = -1; cool = 0.15 * sr;
-        const res = analyseRecording(seg, sr);
-        if (res.error) { setStatus(res.error, true); return; }
-        // live taps build up: show the median of the last five
-        liveTaps.push(res); if (liveTaps.length > 5) liveTaps.shift();
-        const byHz = liveTaps.slice().sort((p, q) => p.hz - q.hz), mid = byHz[byHz.length >> 1];
-        const spread = byHz.length > 1 ? (byHz[byHz.length - 1].hz - byHz[0].hz) / mid.hz : 0;
-        showResult({ ...mid, taps: liveTaps.length, spread, clipped: res.clipped, quiet: res.quiet, dropped: 0 }, false);
-        $("listen-sub").textContent = liveTaps.length + (liveTaps.length === 1 ? " tap" : " taps") + " · tap to stop";
+        return;
       }
+      // a much louder knock while waiting is the real tap: start the wait again from it
+      if (pk > armPk * 3) { armedAt = filled - d.length; armPk = pk; return; }
+      armPk = Math.max(armPk, pk);
+      if (filled - armedAt < 0.32 * sr) return;
+      // this tap, plus up to 0.45 s of room sound before it (used to tell hum from the ring)
+      const pre = Math.min(Math.round(0.45 * sr), Math.max(0, filled - (filled - armedAt) - lastGap));
+      const n = Math.min(ring.length, filled - armedAt + pre), seg = new Float32Array(n);
+      for (let i = 0; i < n; i++) seg[i] = ring[(w - n + i + ring.length) % ring.length];
+      const weak = armPk < thr * 3, spansGap = lastGap > armedAt - 0.02 * sr;
+      armedAt = -1; cool = 0.12 * sr;
+      if (spansGap) { setStatus("Part of that tap went missing (the phone was busy). Tap again.", true); return; }
+      const res = analyseRecording(seg, sr);
+      if (res.error) {
+        // a faint knock that wasn't a ring (a bump, a word) isn't worth an error
+        if (!weak) setStatus(res.error, true);
+        return;
+      }
+      // live taps build up: show the median of the last seven, leaving out strays
+      liveTaps.push(res); if (liveTaps.length > 7) liveTaps.shift();
+      const c = combineTaps(liveTaps);
+      showResult({ ...c, clipped: res.clipped, quiet: res.quiet }, false);
+      $("listen-sub").textContent = c.taps + (c.taps === 1 ? " tap" : " taps") + " · tap to stop";
     };
     src.connect(proc); proc.connect(ctx.destination);
     live = true; $("listen-label").textContent = "Listening…"; $("listen-sub").textContent = "tap the strings"; $("listen").classList.add("listening");
-    setStatus("Listening. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
+    if (headset) setStatus("Listening through " + label + ". Headphones can't hear the strings well: take them out (or turn Bluetooth off) so the phone's own microphone is used, then listen again.", true);
+    else setStatus("Listening" + (label ? " on " + label : "") + " at " + Math.round(sr / 100) / 10 + " kHz. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && live) stopListening(); });
   function stopListening() {
