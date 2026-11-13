@@ -870,7 +870,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 </nav>
 
 <script type="module">
-import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, combineTaps, bandpass, choosePhoneMic, HEADSET_MIC } from "./tension.js";
+import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, combineTaps, bandpass, HEADSET_MIC } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, requestStatus, bookUrl, forecastUrl, rainAt, outdoorCourt, outdoorPlan, indoorSwap, speedSummary, shareText, DAY_NAMES, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
 import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
@@ -1986,31 +1986,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // A promise that gives up after `ms`, so a stuck iOS audio call can't freeze listening.
   const within = (p, ms) => Promise.race([p, new Promise(res => setTimeout(res, ms))]);
   async function startListeningInner() {
-    // Tell iOS this page records (Safari 17+). The default usually works, but saying so stops iOS
-    // from treating the page as playback-only, which can end the microphone track.
-    try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch {}
-    // iOS only lets audio start inside the tap, so make the context and start it now, before
-    // waiting on the microphone. Its resume() must not be awaited here: on iOS it can wait for ever.
+    // Opened exactly as in the version that worked on iPhone (before 13 Nov): one plain request,
+    // with the phone's voice processing off. On 13 Nov the app also asked a second time for a chosen
+    // device and set navigator.audioSession; after that iPhone heard nothing, so both are gone.
+    // iOS only lets audio start inside the tap, so make the context before waiting on the microphone.
     ctx = new (window.AudioContext || window.webkitAudioContext)();
-    try { ctx.resume(); } catch {}
-    // No voice processing: echo cancelling, noise reduction and automatic volume all reshape a ring.
-    const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
-    const open = id => navigator.mediaDevices.getUserMedia({ audio: id ? { ...raw, deviceId: { exact: id } } : raw });
     try {
-      stream = await open(null);
-      // Use the phone's own microphone, not AirPods or a headset. Device names only appear once the
-      // microphone is allowed, so look after the first request and switch if needed. (iPhone Safari
-      // mostly keeps its built-in mic anyway; Android and computers do follow the choice.)
-      try {
-        const now = stream.getAudioTracks()[0], nowId = now && now.getSettings ? now.getSettings().deviceId : "";
-        const pick = choosePhoneMic(await navigator.mediaDevices.enumerateDevices(), prefs.mic);
-        if (pick && pick.deviceId && pick.deviceId !== nowId && (HEADSET_MIC.test(now.label) || pick.label === prefs.mic)) {
-          const s2 = await open(pick.deviceId);
-          stream.getTracks().forEach(t => t.stop()); stream = s2;
-        }
-        const used = stream.getAudioTracks()[0];
-        if (used && used.label && !HEADSET_MIC.test(used.label) && prefs.mic !== used.label) { prefs.mic = used.label; savePrefs(); }
-      } catch {}
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
     } catch (e) {
       try { ctx.close(); } catch {}
       setStatus(e && e.name === "NotAllowedError"
@@ -2019,9 +2001,6 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       return;
     }
     const track = stream.getAudioTracks()[0];
-    // Keep the context made inside the tap. (An earlier version made a new one here to match the
-    // microphone's sample rate, but on iPhone a context made after waiting for the microphone
-    // stays paused, so nothing was heard. Safari converts the rate itself.)
     if (ctx.state !== "running") { try { await within(ctx.resume(), 1000); } catch {} }
     // AirPods and other headsets take over as the microphone when connected: in your ears, they
     // can't hear the strings, and their voice mic cuts out sound like a ring.
@@ -2035,7 +2014,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0, nextTime = -1, lastGap = -Infinity;
     // Health checks: iOS can hand over a microphone that sends nothing (another app holds it, a call
     // or Siri interrupted it), which looks exactly like "it didn't hear my tap".
-    let zeros = 0, warnedSilent = false, lastRoom = 0;
+    let zeros = 0, warnedSilent = false, lastRoom = 0, meterPk = 0;
     const me = stream;
     if (track) {
       track.onmute = () => { if (live && stream === me) setStatus("The microphone was interrupted (a call, Siri or another app). Press Listen again.", true); };
@@ -2060,10 +2039,13 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
       filled += d.length;
       const thr = Math.max(0.0015, noise * 5);
-      // until the first tap, say how loud the room is, since a noisy room is the usual reason a tap is missed
-      if (!liveTaps.length && filled - lastRoom > 0.5 * sr && armedAt < 0) {
+      // A live sound meter, so you can see the microphone is hearing something at all.
+      let rawPk = 0; for (let i = 0; i < d.length; i += 2) rawPk = Math.max(rawPk, Math.abs(d[i]));
+      meterPk = Math.max(meterPk * 0.8, rawPk);
+      if (filled - lastRoom > 0.2 * sr) {
         lastRoom = filled;
-        $("listen-sub").textContent = noise < 0.003 ? "quiet room · tap the strings" : noise < 0.01 ? "some noise · tap firmly" : "noisy room · get closer";
+        const bars = Math.max(0, Math.min(8, Math.round(8 + Math.log10(meterPk + 1e-9) * 2.5)));
+        $("listen-sub").textContent = "mic " + "▮".repeat(bars) + "▯".repeat(8 - bars) + (liveTaps.length ? " · " + liveTaps.length + (liveTaps.length === 1 ? " tap" : " taps") : " · tap the strings");
       }
       if (armedAt < 0) {
         if (cool > 0) cool -= d.length;
@@ -2079,20 +2061,15 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       const pre = Math.min(Math.round(0.45 * sr), Math.max(0, filled - (filled - armedAt) - lastGap));
       const n = Math.min(ring.length, filled - armedAt + pre), seg = new Float32Array(n);
       for (let i = 0; i < n; i++) seg[i] = ring[(w - n + i + ring.length) % ring.length];
-      const weak = armPk < thr * 3, spansGap = lastGap > armedAt - 0.02 * sr;
+      const spansGap = lastGap > armedAt - 0.02 * sr;
       armedAt = -1; cool = 0.12 * sr;
       if (spansGap) { setStatus("Part of that tap went missing (the phone was busy). Tap again.", true); return; }
       const res = analyseRecording(seg, sr);
-      if (res.error) {
-        // a faint knock that wasn't a ring (a bump, a word) isn't worth an error
-        if (!weak) setStatus(res.error, true);
-        return;
-      }
+      if (res.error) { setStatus(res.error, true); return; }
       // live taps build up: show the median of the last seven, leaving out strays
       liveTaps.push(res); if (liveTaps.length > 7) liveTaps.shift();
       const c = combineTaps(liveTaps);
       showResult({ ...c, clipped: res.clipped, quiet: res.quiet }, false);
-      $("listen-sub").textContent = c.taps + (c.taps === 1 ? " tap" : " taps") + " · tap to stop";
     };
     src.connect(proc); proc.connect(ctx.destination);
     live = true; $("listen-label").textContent = "Listening…"; $("listen").classList.add("listening");

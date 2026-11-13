@@ -138,6 +138,9 @@ export function analyseTap(x, sr, start, end, noise) {
   }
   let top = 0;
   for (let i = 0; i < mag.length; i++) if (mag[i] > mag[top]) top = i;
+  // if taking the room sound off left nothing standing, the "room sound" was really part of the
+  // ring: fall back to the plain spectrum rather than reporting no ring
+  if (mag !== raw && !(mag[top] > 0)) { mag = raw; top = 0; for (let i = 0; i < mag.length; i++) if (mag[i] > mag[top]) top = i; }
   const sorted = Array.from(raw).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
   if (!(mag[top] > 0)) return { hz: 0, clarity: 0, mag: raw, binHz, b0 };
   // The bed's higher modes ring 1.5x, 1.7x and 2x above the fundamental, and an off-centre tap can
