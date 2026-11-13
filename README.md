@@ -135,8 +135,8 @@ Removing a booking here does not cancel it with the club. Do that in GameTime. N
 
 ## Measuring
 
-- Hold the phone 10–20 cm from the strings, somewhere quiet.
-- Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm. Tap the centre of the strings firmly with the heel of your palm and lift off at once, about a second apart. The app shows the median of your last five taps.
+- Take the vibration dampener off, and take AirPods out (iPhone Safari may otherwise listen through them).
+- Point the phone's bottom edge (the main microphone) at the centre of the strings from 5–10 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm and lift off at once, about a second apart. The app shows the median of your last five taps.
 - Press **Save this reading** to add it to the racket's history.
 - Right after a restring, set **Strung on** to today, tap, and press **Calibrate**. Readings then match the tension your stringer used.
 

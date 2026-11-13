@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bedKg, machineKg, tensionKg, readingKg, oldModelKg, snap, analyseRecording, MODEL_2_AT, G } from "../public/tension.js";
+import { bedKg, machineKg, tensionKg, readingKg, oldModelKg, snap, analyseRecording, combineTaps, MODEL_2_AT, G } from "../public/tension.js";
 
 // Published check: Cross & Bower, "Measurements of string tension in a tennis racket",
 // Sports Engineering 4 (2001). Load cell inside a strung racket vs the bed's pitch.
@@ -42,10 +42,10 @@ test("a calibration saved on the old formula keeps reading the same", () => {
 });
 
 // ---------- pitch ----------
-function tap({ f = 540, sr = 48000, amp = 0.3, taps = [0.3, 1.1, 1.9], overtone = 0, thump = 0, noise = 0.001, tau = 0.08, odd = [] } = {}) {
+function tap({ f = 540, sr = 48000, amp = 0.3, taps = [0.3, 1.1, 1.9], overtone = 0, thump = 0, noise = 0.001, tau = 0.08, odd = [], hum = 0, humHz = 360 } = {}) {
   let seed = 3; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647 - 0.5;
   const x = new Float32Array(Math.round(sr * 2.6));
-  for (let i = 0; i < x.length; i++) x[i] = noise * rnd();
+  for (let i = 0; i < x.length; i++) x[i] = noise * rnd() + hum * Math.sin(2 * Math.PI * humHz * i / sr);
   taps.forEach((t0, k) => {
     const fk = odd.includes(k) ? f * 1.12 : f, i0 = Math.round(t0 * sr);
     let lp = 0;
@@ -101,4 +101,38 @@ test("silence is reported, not read", () => {
 test("units line up: bed kg times g is newtons", () => {
   const r = { head: 100, gauge: 1.25, material: "poly", pattern: "16x19" };
   assert.ok(bedKg(500, r) * G > 50 && bedKg(500, r) * G < 200);
+});
+
+test("a steady hum in the room is not mistaken for the ring", () => {
+  // a 360 Hz hum (a mains harmonic) about as loud as a quiet tap's ring
+  const r = analyseRecording(tap({ amp: 0.01, hum: 0.006, taps: [0.6, 1.4, 2.1] }), 48000);
+  assert.ok(!r.error, r.error);
+  assert.ok(Math.abs(r.hz / 540 - 1) < 0.003, `${r.hz}`);
+});
+
+test("live taps: one stray tap is left out of the median", () => {
+  const c = combineTaps([{ hz: 540 }, { hz: 541 }, { hz: 610 }, { hz: 539 }]);
+  assert.equal(c.hz, 540);
+  assert.equal(c.taps, 3);
+  assert.equal(c.dropped, 1);
+});
+
+test("picks the phone's own microphone over AirPods", async () => {
+  const { choosePhoneMic, HEADSET_MIC } = await import("../public/tension.js");
+  const ios = [
+    { kind: "audioinput", deviceId: "a1", label: "Jack's AirPods Pro" },
+    { kind: "audioinput", deviceId: "b2", label: "iPhone Microphone" },
+    { kind: "audiooutput", deviceId: "c3", label: "iPhone Speaker" },
+  ];
+  assert.equal(choosePhoneMic(ios).deviceId, "b2");
+  const android = [
+    { kind: "audioinput", deviceId: "default", label: "Default" },
+    { kind: "audioinput", deviceId: "x", label: "Bluetooth headset" },
+    { kind: "audioinput", deviceId: "y", label: "Headset earpiece" },
+    { kind: "audioinput", deviceId: "z", label: "Speakerphone" },
+  ];
+  assert.equal(choosePhoneMic(android).deviceId, "z");
+  // before permission labels are empty, so there is nothing to choose from
+  assert.equal(choosePhoneMic([{ kind: "audioinput", deviceId: "", label: "" }]), null);
+  assert.ok(HEADSET_MIC.test("AirPods Max") && !HEADSET_MIC.test("iPhone Microphone"));
 });

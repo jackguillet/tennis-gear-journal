@@ -103,27 +103,43 @@ export function bandpass(sr, f0 = 560, q = 0.8) {
   return v => { const y = b0 * v + b2 * x2 - a1 * y1 - a2 * y2; x2 = x1; x1 = v; y2 = y1; y1 = y; return y; };
 }
 
-// Analyse one tap whose ring starts at sample `start`.
-export function analyseTap(x, sr, start, end) {
-  const s = start + Math.round(0.010 * sr);             // skip the knock of the impact itself
-  const len = Math.min(Math.round(0.25 * sr), (end || x.length) - s - Math.round(0.005 * sr));
-  if (len < 0.05 * sr) return null;
-  const N = 32768;
-  const re = new Float64Array(N), im = new Float64Array(N);
-  // The ring is loudest at the start and dies away, so the window opens fast (4 ms) and closes
-  // slowly. A symmetric (Hann) window would throw away the loudest part of the ring.
+// Windowed spectrum of `len` samples from `s`, over the search band. The ring is loudest at the
+// start and dies away, so the window opens fast (4 ms) and closes slowly: a symmetric (Hann)
+// window would throw away the loudest part of the ring.
+const N_FFT = 32768;
+function bandSpectrum(x, sr, s, len) {
+  const re = new Float64Array(N_FFT), im = new Float64Array(N_FFT);
   const rise = Math.round(0.004 * sr);
   for (let i = 0; i < len; i++) {
     const up = i < rise ? 0.5 - 0.5 * Math.cos(Math.PI * i / rise) : 1;
     const down = Math.cos(0.5 * Math.PI * i / len);
-    re[i] = x[s + i] * up * down * down;
+    re[i] = (x[s + i] || 0) * up * down * down;
   }
   fft(re, im);
-  const binHz = sr / N, b0 = Math.floor(LO / binHz), b1 = Math.ceil(HI / binHz);
+  const binHz = sr / N_FFT, b0 = Math.floor(LO / binHz), b1 = Math.ceil(HI / binHz);
   const mag = new Float64Array(b1 - b0 + 1);
+  for (let k = b0; k <= b1; k++) mag[k - b0] = Math.hypot(re[k], im[k]);
+  return { mag, binHz, b0 };
+}
+
+// Analyse one tap whose ring starts at sample `start`. `noise`, if given, is the start of a
+// stretch of room sound with no tap in it: its spectrum is taken off the tap's, so a steady hum
+// (a fridge, lights, an air conditioner) can't be mistaken for the ring.
+export function analyseTap(x, sr, start, end, noise) {
+  const s = start + Math.round(0.010 * sr);             // skip the knock of the impact itself
+  const len = Math.min(Math.round(0.25 * sr), (end || x.length) - s - Math.round(0.005 * sr));
+  if (len < 0.05 * sr) return null;
+  const { mag: raw, binHz, b0 } = bandSpectrum(x, sr, s, len);
+  let mag = raw;
+  if (noise != null && noise >= 0 && noise + len <= x.length) {
+    const nm = bandSpectrum(x, sr, noise, len).mag;
+    // smooth the noise a little and take off 1.5x of it
+    mag = raw.map((v, i) => Math.max(0, v - 1.5 * Math.max(nm[i], nm[i - 1] || 0, nm[i + 1] || 0)));
+  }
   let top = 0;
-  for (let k = b0; k <= b1; k++) { mag[k - b0] = Math.hypot(re[k], im[k]); if (mag[k - b0] > mag[top]) top = k - b0; }
-  const sorted = Array.from(mag).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
+  for (let i = 0; i < mag.length; i++) if (mag[i] > mag[top]) top = i;
+  const sorted = Array.from(raw).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
+  if (!(mag[top] > 0)) return { hz: 0, clarity: 0, mag: raw, binHz, b0 };
   // The bed's higher modes ring 1.5x, 1.7x and 2x above the fundamental, and an off-centre tap can
   // make one of them the loudest. So take the lowest clear peak, not simply the loudest.
   let best = top;
@@ -133,11 +149,13 @@ export function analyseTap(x, sr, start, end) {
   }
   const clarity = mag[best] / median;
   let off = 0;
-  if (best > 0 && best < mag.length - 1) {
-    const l = Math.log(mag[best - 1] + 1e-12), c = Math.log(mag[best] + 1e-12), r = Math.log(mag[best + 1] + 1e-12);
+  if (best > 0 && best < raw.length - 1) {
+    // interpolate on the raw spectrum: the noise has been checked, and its shape is smooth there
+    const l = Math.log(raw[best - 1] + 1e-12), c = Math.log(raw[best] + 1e-12), r = Math.log(raw[best + 1] + 1e-12);
     off = 0.5 * (l - r) / (l - 2 * c + r || 1);
+    if (!(Math.abs(off) <= 1)) off = 0;
   }
-  return { hz: (b0 + best + off) * binHz, clarity, mag, binHz, b0 };
+  return { hz: (b0 + best + off) * binHz, clarity, mag: raw, binHz, b0 };
 }
 
 // Find every tap in a recording and return the median result.
@@ -152,17 +170,26 @@ export function analyseRecording(x, sr) {
     }
     env.push(m);
   }
-  if (!env.length) return { error: "The recording is too short. Record 3 or 4 taps." };
+  if (env.length < 4) return { error: "The recording is too short. Record 3 or 4 taps." };
+  env[0] = env[1]; // the filter's first samples are its own start-up, not sound
   const peak = Math.max(...env);
   const floor = env.slice().sort((p, q) => p - q)[Math.floor(env.length * 0.2)] || 0;
-  if (rawPeak < 0.0005 || peak < 0.0004) return { error: "The recording is almost silent. Check the microphone is allowed, hold the phone's bottom edge 10–20 cm from the strings and tap firmly." };
+  if (rawPeak < 0.0005 || peak < 0.0004) return { error: "The recording is almost silent. Check the microphone is allowed, hold the phone's bottom edge 5–10 cm from the strings and tap firmly." };
   const taps = [], gap = Math.round(0.2 * sr / hop), thr = Math.max(peak * 0.12, floor * 5);
   for (let i = 1; i < env.length; i++) {
     if (env[i] > thr && env[i] > env[i - 1] * 1.5 && (!taps.length || i - taps[taps.length - 1] > gap)) taps.push(i);
   }
   if (!taps.length) taps.push(env.indexOf(peak));
+  // The quietest 0.25 s with no tap in it is the room's own sound.
+  const win = Math.round(0.25 * sr / hop);
+  let noise = null, quietest = Infinity;
+  for (let i = 0; i + win <= env.length; i += 2) {
+    if (taps.some(t => t + 2 * gap > i && t < i + win + 1)) continue;
+    let m = 0; for (let j = i; j < i + win; j++) m = Math.max(m, env[j]);
+    if (m < quietest) { quietest = m; noise = i * hop; }
+  }
   // a tap's ring starts a little before the band-passed envelope peaks
-  const res = taps.map((t, k) => analyseTap(x, sr, Math.max(0, (t - 1) * hop), k + 1 < taps.length ? (taps[k + 1] - 1) * hop : x.length))
+  const res = taps.map((t, k) => analyseTap(x, sr, Math.max(0, (t - 1) * hop), k + 1 < taps.length ? (taps[k + 1] - 1) * hop : x.length, noise))
     .filter(r => r && r.clarity > 6);
   if (!res.length) {
     const quiet = peak < floor * 8 || peak < 0.003;
@@ -176,5 +203,35 @@ export function analyseRecording(x, sr) {
   const kept = res.filter(r => Math.abs(r.hz / mid.hz - 1) <= 0.04);
   mid = kept[kept.length >> 1];
   const spread = kept.length > 1 ? (kept[kept.length - 1].hz - kept[0].hz) / mid.hz : 0;
-  return { ...mid, taps: kept.length, dropped: res.length - kept.length, spread, clipped: clipped > 3, quiet: peak < floor * 20 };
+  const ref = noise == null ? floor : quietest;
+  return { ...mid, taps: kept.length, dropped: res.length - kept.length, spread, clipped: clipped > 3, quiet: peak < ref * 20 };
+}
+
+// Combine taps heard one at a time (live listening). Taps more than 4% from the median of the
+// others are left out, so one bad tap can't drag the reading.
+export function combineTaps(list) {
+  if (!list.length) return null;
+  const byHz = list.slice().sort((p, q) => p.hz - q.hz);
+  let mid = byHz[byHz.length >> 1];
+  const kept = byHz.filter(r => Math.abs(r.hz / mid.hz - 1) <= 0.04);
+  mid = kept[kept.length >> 1];
+  const spread = kept.length > 1 ? (kept[kept.length - 1].hz - kept[0].hz) / mid.hz : 0;
+  return { ...mid, taps: kept.length, dropped: list.length - kept.length, spread };
+}
+
+// ---------- which microphone ----------
+// Headphones and headsets (AirPods, car kits, wired earbuds) take over as the microphone when they
+// connect. In your ears they can't hear the strings, and Bluetooth headset audio is cut to a
+// narrow voice band. So the app asks for the phone's own microphone by name when it can.
+export const HEADSET_MIC = /airpods|bluetooth|head ?set|headphone|beats|buds|hands-?free|\bhfp\b|earphone|earpods|wireless|\bcar\b/i;
+const PHONE_MIC = /iphone|ipad|built-?in|internal|bottom|speakerphone|phone microphone/i;
+// Pick the phone's own microphone from enumerateDevices() output, or null when none is listed.
+export function choosePhoneMic(devices, rememberedLabel) {
+  const mics = devices.filter(d => d.kind === "audioinput" && d.label && !HEADSET_MIC.test(d.label));
+  if (!mics.length) return null;
+  const real = mics.filter(d => d.deviceId !== "default" && d.deviceId !== "communications");
+  const pool = real.length ? real : mics;
+  return pool.find(d => rememberedLabel && d.label === rememberedLabel)
+    || pool.find(d => PHONE_MIC.test(d.label))
+    || pool[0];
 }
