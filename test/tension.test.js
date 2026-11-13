@@ -116,3 +116,23 @@ test("live taps: one stray tap is left out of the median", () => {
   assert.equal(c.taps, 3);
   assert.equal(c.dropped, 1);
 });
+
+test("picks the phone's own microphone over AirPods", async () => {
+  const { choosePhoneMic, HEADSET_MIC } = await import("../public/tension.js");
+  const ios = [
+    { kind: "audioinput", deviceId: "a1", label: "Jack's AirPods Pro" },
+    { kind: "audioinput", deviceId: "b2", label: "iPhone Microphone" },
+    { kind: "audiooutput", deviceId: "c3", label: "iPhone Speaker" },
+  ];
+  assert.equal(choosePhoneMic(ios).deviceId, "b2");
+  const android = [
+    { kind: "audioinput", deviceId: "default", label: "Default" },
+    { kind: "audioinput", deviceId: "x", label: "Bluetooth headset" },
+    { kind: "audioinput", deviceId: "y", label: "Headset earpiece" },
+    { kind: "audioinput", deviceId: "z", label: "Speakerphone" },
+  ];
+  assert.equal(choosePhoneMic(android).deviceId, "z");
+  // before permission labels are empty, so there is nothing to choose from
+  assert.equal(choosePhoneMic([{ kind: "audioinput", deviceId: "", label: "" }]), null);
+  assert.ok(HEADSET_MIC.test("AirPods Max") && !HEADSET_MIC.test("iPhone Microphone"));
+});

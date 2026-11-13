@@ -411,7 +411,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
       <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
       <button class="listen" id="listen" type="button"><span id="listen-label">Listen for taps</span><small id="listen-sub">then tap the strings</small></button>
       <div class="status" id="status" aria-live="polite"></div>
-      <p class="tip">Hold the phone's bottom edge 10–20 cm from the strings. Tap the centre firmly with the heel of your palm, about once a second.</p>
+      <p class="tip">Take the dampener out and any AirPods out. Hold the phone's bottom edge 5–10 cm from the centre of the strings. Tap the centre with the heel of your palm (or a pen), about once a second.</p>
       <div class="measure-btns">
         <button class="btn primary" id="save" type="button" hidden>Save this reading</button>
         <label class="btn" for="file">Upload a recording<input id="file" type="file" accept="audio/*,video/*"></label>
@@ -434,8 +434,8 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
       <summary>How it works</summary>
       <p>A tapped string bed rings like a drum skin at one main pitch, usually 450–700 Hz. Tension rises with the square of that pitch, the head area and the weight per metre of the string (its gauge and material). The app uses the drum-skin formula for an oval head, which Cross and Bower checked against a load cell inside a strung racket and found within a few percent.</p>
       <p>That gives the tension left in the strung racket, shown under the big number as "in the bed". It is 30–40% lower than the tension set on the stringing machine, even straight after stringing, because the strings relax and lose tension through the grommets. Apps like RacquetTune show this bed number. The big number turns it back into stringing-machine terms using that typical drop, so it can be compared with what you asked your stringer for. Calibrate right after a restring and the app learns your stringer's real drop. Either way the trend for one racket is reliable: use it to see when to restring.</p>
-      <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Point the phone's bottom edge (the main microphone) at the strings from 10–20 cm, somewhere quiet. Tap the centre of the strings firmly with the heel of your palm, a knuckle or the edge of another racket, and lift off at once: anything left on the strings stops the ring. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
-      <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
+      <p><b>Getting a clean reading.</b> Hold the racket by the handle and keep the strings free. Take any vibration dampener off the strings: it changes and kills the ring. Point the phone's bottom edge (the main microphone) at the centre of the strings from 5–10 cm, somewhere quiet. Tap the centre firmly with the heel of your palm, a knuckle, a pen or the edge of another racket, and lift off at once: anything left on the strings stops the ring. A hard, quick tap (a pen, a fingernail) rings cleanest. Tap 3–5 times about a second apart. If the app says a tap was too loud, move the phone a little further away.</p>
+      <p>Any recent iPhone or Android phone is accurate enough: their microphones are flat across the 300–1000 Hz band these rings fall in, and their clocks are exact to a few parts per million, so the pitch comes out within about 0.1–0.5%. What limits accuracy is the tap: centre taps, a quiet room and several taps matter more than the phone. The app turns off the phone's voice processing (echo cancelling, noise reduction and automatic volume) so the ring reaches it untouched, and asks for the phone's own microphone rather than AirPods or a headset. iPhone Safari can't always be told which microphone to use, so take AirPods out (or turn Bluetooth off) while measuring. You can also upload a recording: in Voice Memos, tap Share, choose Save to Files, then pick it from Upload a recording.</p>
     </details>
   </div>
 
@@ -870,7 +870,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
 </nav>
 
 <script type="module">
-import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, combineTaps, bandpass } from "./tension.js";
+import { LB, LO, HI, machineKg, bedKg, tensionKg, readingKg, snap, analyseRecording, combineTaps, bandpass, choosePhoneMic, HEADSET_MIC } from "./tension.js";
 import { restringAdvice, personalBreak } from "./restring.js";
 import { toIcs, bookingTitle, zonedToUtc, cancelBy, DEFAULT_TZ, planTitle, planLink, localDate, gridDay, bestCourt, comingUp, requestStatus, bookUrl, forecastUrl, rainAt, outdoorCourt, outdoorPlan, indoorSwap, speedSummary, shareText, DAY_NAMES, WAITLIST_URL, SHEET_URL, AREA_ORDER } from "./courts.js";
 import { DEFAULT_LIFE, shoeWear, currentShoe } from "./shoes.js";
@@ -1980,8 +1980,24 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   async function startListening() {
     // iOS only lets audio start inside the tap, so make the context before waiting on the microphone
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // No voice processing: echo cancelling, noise reduction and automatic volume all reshape a ring.
+    const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
+    const open = id => navigator.mediaDevices.getUserMedia({ audio: id ? { ...raw, deviceId: { exact: id } } : raw });
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 } });
+      stream = await open(null);
+      // Use the phone's own microphone, not AirPods or a headset. Device names only appear once the
+      // microphone is allowed, so look after the first request and switch if needed. (iPhone Safari
+      // mostly keeps its built-in mic anyway; Android and computers do follow the choice.)
+      try {
+        const now = stream.getAudioTracks()[0], nowId = now && now.getSettings ? now.getSettings().deviceId : "";
+        const pick = choosePhoneMic(await navigator.mediaDevices.enumerateDevices(), prefs.mic);
+        if (pick && pick.deviceId && pick.deviceId !== nowId && (HEADSET_MIC.test(now.label) || pick.label === prefs.mic)) {
+          const s2 = await open(pick.deviceId);
+          stream.getTracks().forEach(t => t.stop()); stream = s2;
+        }
+        const used = stream.getAudioTracks()[0];
+        if (used && used.label && !HEADSET_MIC.test(used.label) && prefs.mic !== used.label) { prefs.mic = used.label; savePrefs(); }
+      } catch {}
     } catch (e) {
       try { ctx.close(); } catch {}
       setStatus(e && e.name === "NotAllowedError"
@@ -2004,22 +2020,40 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // AirPods and other headsets take over as the microphone when connected: in your ears, they
     // can't hear the strings, and their voice mic cuts out sound like a ring.
     const label = (track && track.label) || "";
-    const headset = /airpods|bluetooth|headset|headphone|beats|buds|hands-free|hfp/i.test(label);
+    const headset = HEADSET_MIC.test(label);
     liveTaps = [];
     const src = ctx.createMediaStreamSource(stream), sr = ctx.sampleRate;
     // Taps are found on a band-passed copy (the band string beds ring in), so a quiet ring still
     // stands out from room rumble and handling noise. The analysis uses the raw sound.
     const ring = new Float32Array(Math.round(sr * 1.5)), bp = bandpass(sr);
     let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0, nextTime = -1, lastGap = -Infinity;
+    // Health checks: iOS can hand over a microphone that sends nothing (another app holds it, a call
+    // or Siri interrupted it), which looks exactly like "it didn't hear my tap".
+    let zeros = 0, warnedSilent = false, lastRoom = 0;
+    const me = stream;
+    if (track) {
+      track.onmute = () => { if (live && stream === me) setStatus("The microphone was interrupted (a call, Siri or another app). Press Listen again.", true); };
+      track.onended = () => { if (live && stream === me) { stopListening(); setStatus("The microphone stopped. Press Listen again.", true); } };
+    }
+    setTimeout(() => { if (live && stream === me && filled === 0) setStatus("No sound is reaching the app from the microphone. Press Listen again; if that doesn't help, close Safari fully and reopen it.", true); }, 2000);
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
-      const d = ev.inputBuffer.getChannelData(0); let pk = 0;
+      const d = ev.inputBuffer.getChannelData(0); let pk = 0, any = false;
+      for (let i = 0; i < d.length; i += 7) if (d[i] !== 0) { any = true; break; }
+      zeros = any ? 0 : zeros + d.length;
+      if (zeros > 1.5 * sr && !warnedSilent) { warnedSilent = true; setStatus("The microphone is sending pure silence. Another app may be using it: close it, then press Listen again.", true); }
+      if (any) warnedSilent = false;
       // If the phone was too busy and a block of sound went missing, a tap spanning it can't be trusted.
       if (nextTime >= 0 && ev.playbackTime - nextTime > 0.5 * d.length / sr) lastGap = filled;
       nextTime = ev.playbackTime + d.length / sr;
       for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
       filled += d.length;
       const thr = Math.max(0.0015, noise * 5);
+      // until the first tap, say how loud the room is, since a noisy room is the usual reason a tap is missed
+      if (!liveTaps.length && filled - lastRoom > 0.5 * sr && armedAt < 0) {
+        lastRoom = filled;
+        $("listen-sub").textContent = noise < 0.003 ? "quiet room · tap the strings" : noise < 0.01 ? "some noise · tap firmly" : "noisy room · get closer";
+      }
       if (armedAt < 0) {
         if (cool > 0) cool -= d.length;
         else if (pk > thr) { armedAt = filled - d.length; armPk = pk; }
@@ -2052,7 +2086,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     src.connect(proc); proc.connect(ctx.destination);
     live = true; $("listen-label").textContent = "Listening…"; $("listen-sub").textContent = "tap the strings"; $("listen").classList.add("listening");
     if (headset) setStatus("Listening through " + label + ". Headphones can't hear the strings well: take them out (or turn Bluetooth off) so the phone's own microphone is used, then listen again.", true);
-    else setStatus("Listening" + (label ? " on " + label : "") + " at " + Math.round(sr / 100) / 10 + " kHz. Tap the centre of the strings firmly with the heel of your palm, about once a second.");
+    else setStatus("Listening" + (label ? " on " + label : "") + " at " + Math.round(sr / 100) / 10 + " kHz. Tap the centre of the strings firmly with the heel of your palm, about once a second. Dampener off.");
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && live) stopListening(); });
   function stopListening() {

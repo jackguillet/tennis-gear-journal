@@ -174,7 +174,7 @@ export function analyseRecording(x, sr) {
   env[0] = env[1]; // the filter's first samples are its own start-up, not sound
   const peak = Math.max(...env);
   const floor = env.slice().sort((p, q) => p - q)[Math.floor(env.length * 0.2)] || 0;
-  if (rawPeak < 0.0005 || peak < 0.0004) return { error: "The recording is almost silent. Check the microphone is allowed, hold the phone's bottom edge 10–20 cm from the strings and tap firmly." };
+  if (rawPeak < 0.0005 || peak < 0.0004) return { error: "The recording is almost silent. Check the microphone is allowed, hold the phone's bottom edge 5–10 cm from the strings and tap firmly." };
   const taps = [], gap = Math.round(0.2 * sr / hop), thr = Math.max(peak * 0.12, floor * 5);
   for (let i = 1; i < env.length; i++) {
     if (env[i] > thr && env[i] > env[i - 1] * 1.5 && (!taps.length || i - taps[taps.length - 1] > gap)) taps.push(i);
@@ -217,4 +217,21 @@ export function combineTaps(list) {
   mid = kept[kept.length >> 1];
   const spread = kept.length > 1 ? (kept[kept.length - 1].hz - kept[0].hz) / mid.hz : 0;
   return { ...mid, taps: kept.length, dropped: list.length - kept.length, spread };
+}
+
+// ---------- which microphone ----------
+// Headphones and headsets (AirPods, car kits, wired earbuds) take over as the microphone when they
+// connect. In your ears they can't hear the strings, and Bluetooth headset audio is cut to a
+// narrow voice band. So the app asks for the phone's own microphone by name when it can.
+export const HEADSET_MIC = /airpods|bluetooth|head ?set|headphone|beats|buds|hands-?free|\bhfp\b|earphone|earpods|wireless|\bcar\b/i;
+const PHONE_MIC = /iphone|ipad|built-?in|internal|bottom|speakerphone|phone microphone/i;
+// Pick the phone's own microphone from enumerateDevices() output, or null when none is listed.
+export function choosePhoneMic(devices, rememberedLabel) {
+  const mics = devices.filter(d => d.kind === "audioinput" && d.label && !HEADSET_MIC.test(d.label));
+  if (!mics.length) return null;
+  const real = mics.filter(d => d.deviceId !== "default" && d.deviceId !== "communications");
+  const pool = real.length ? real : mics;
+  return pool.find(d => rememberedLabel && d.label === rememberedLabel)
+    || pool.find(d => PHONE_MIC.test(d.label))
+    || pool[0];
 }
