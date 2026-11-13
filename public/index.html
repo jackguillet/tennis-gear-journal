@@ -1977,9 +1977,22 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
 
   // ---------- live microphone ----------
   let ctx = null, stream = null, proc = null, live = false, liveTaps = [];
+  let starting = false, rec = null;
   async function startListening() {
-    // iOS only lets audio start inside the tap, so make the context before waiting on the microphone
+    if (starting) return;
+    starting = true;
+    try { await startListeningInner(); } finally { starting = false; }
+  }
+  // A promise that gives up after `ms`, so a stuck iOS audio call can't freeze listening.
+  const within = (p, ms) => Promise.race([p, new Promise(res => setTimeout(res, ms))]);
+  async function startListeningInner() {
+    // Tell iOS this page records (Safari 17+). The default usually works, but saying so stops iOS
+    // from treating the page as playback-only, which can end the microphone track.
+    try { if (navigator.audioSession) navigator.audioSession.type = "play-and-record"; } catch {}
+    // iOS only lets audio start inside the tap, so make the context and start it now, before
+    // waiting on the microphone. Its resume() must not be awaited here: on iOS it can wait for ever.
     ctx = new (window.AudioContext || window.webkitAudioContext)();
+    try { ctx.resume(); } catch {}
     // No voice processing: echo cancelling, noise reduction and automatic volume all reshape a ring.
     const raw = { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 };
     const open = id => navigator.mediaDevices.getUserMedia({ audio: id ? { ...raw, deviceId: { exact: id } } : raw });
@@ -2005,18 +2018,11 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
         : "The microphone couldn't start. Upload a recording of 3 or 4 taps instead.", true);
       return;
     }
-    const track = stream.getAudioTracks()[0], set = (track && track.getSettings && track.getSettings()) || {};
-    // Safari can run the microphone at 44.1 kHz while the audio context runs at 48 kHz. When the two
-    // disagree, WebKit has delivered pitch-shifted or gappy sound, which reads about 9% off in pitch
-    // (18% in tension). So run the context at the microphone's own rate.
-    if (set.sampleRate && Math.abs(set.sampleRate - ctx.sampleRate) > 1) {
-      try {
-        const c2 = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: set.sampleRate });
-        try { ctx.close(); } catch {}
-        ctx = c2;
-      } catch {}
-    }
-    if (ctx.state === "suspended") { try { await ctx.resume(); } catch {} }
+    const track = stream.getAudioTracks()[0];
+    // Keep the context made inside the tap. (An earlier version made a new one here to match the
+    // microphone's sample rate, but on iPhone a context made after waiting for the microphone
+    // stays paused, so nothing was heard. Safari converts the rate itself.)
+    if (ctx.state !== "running") { try { await within(ctx.resume(), 1000); } catch {} }
     // AirPods and other headsets take over as the microphone when connected: in your ears, they
     // can't hear the strings, and their voice mic cuts out sound like a ring.
     const label = (track && track.label) || "";
@@ -2035,13 +2041,18 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       track.onmute = () => { if (live && stream === me) setStatus("The microphone was interrupted (a call, Siri or another app). Press Listen again.", true); };
       track.onended = () => { if (live && stream === me) { stopListening(); setStatus("The microphone stopped. Press Listen again.", true); } };
     }
-    setTimeout(() => { if (live && stream === me && filled === 0) setStatus("No sound is reaching the app from the microphone. Press Listen again; if that doesn't help, close Safari fully and reopen it.", true); }, 2000);
+    // If no sound reaches the page within 2.5 s (the audio context is paused, or iOS hands it
+    // silence), switch to recording short clips instead, which doesn't depend on the live path.
+    setTimeout(() => {
+      if (!live || stream !== me || rec) return;
+      if (filled === 0 || zeros >= filled) { try { proc.disconnect(); } catch {} startClips(me); }
+    }, 2500);
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
       const d = ev.inputBuffer.getChannelData(0); let pk = 0, any = false;
       for (let i = 0; i < d.length; i += 7) if (d[i] !== 0) { any = true; break; }
       zeros = any ? 0 : zeros + d.length;
-      if (zeros > 1.5 * sr && !warnedSilent) { warnedSilent = true; setStatus("The microphone is sending pure silence. Another app may be using it: close it, then press Listen again.", true); }
+      if (zeros > 1.5 * sr && !warnedSilent && filled > 3 * sr) { warnedSilent = true; setStatus("The microphone is sending pure silence. Another app may be using it: close it, then press Listen again.", true); }
       if (any) warnedSilent = false;
       // If the phone was too busy and a block of sound went missing, a tap spanning it can't be trusted.
       if (nextTime >= 0 && ev.playbackTime - nextTime > 0.5 * d.length / sr) lastGap = filled;
@@ -2084,19 +2095,63 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       $("listen-sub").textContent = c.taps + (c.taps === 1 ? " tap" : " taps") + " · tap to stop";
     };
     src.connect(proc); proc.connect(ctx.destination);
-    live = true; $("listen-label").textContent = "Listening…"; $("listen-sub").textContent = "tap the strings"; $("listen").classList.add("listening");
+    live = true; $("listen-label").textContent = "Listening…"; $("listen").classList.add("listening");
+    $("listen-sub").textContent = ctx.state === "running" ? "tap the strings" : "tap here if nothing happens";
     if (headset) setStatus("Listening through " + label + ". Headphones can't hear the strings well: take them out (or turn Bluetooth off) so the phone's own microphone is used, then listen again.", true);
     else setStatus("Listening" + (label ? " on " + label : "") + " at " + Math.round(sr / 100) / 10 + " kHz. Tap the centre of the strings firmly with the heel of your palm, about once a second. Dampener off.");
   }
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && live) stopListening(); });
+  // Backup listening: record 4-second clips with MediaRecorder and analyse each one like an
+  // uploaded recording. Slower to answer than live listening, but it doesn't rely on the live
+  // audio path that iOS sometimes leaves silent (especially in a Home Screen web app).
+  function startClips(s) {
+    if (typeof MediaRecorder === "undefined") { setStatus("No sound is reaching the app from the microphone. Close the app fully, reopen it and press Listen again, or upload a recording.", true); return; }
+    const type = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find(t => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(t));
+    let silentClips = 0;
+    const clip = () => {
+      if (!live || stream !== s) return;
+      let r; try { r = new MediaRecorder(s, type ? { mimeType: type } : undefined); } catch { setStatus("The microphone couldn't record here. Upload a recording of 3 or 4 taps instead.", true); return; }
+      rec = r; const parts = [];
+      r.ondataavailable = e => { if (e.data && e.data.size) parts.push(e.data); };
+      r.onstop = async () => {
+        if (!live || stream !== s) return;
+        setTimeout(clip, 0); // start the next clip straight away
+        try {
+          const ac = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 44100, 44100);
+          const buf = await ac.decodeAudioData(await new Blob(parts, { type: r.mimeType || type || "" }).arrayBuffer());
+          const ch = buf.getChannelData(0);
+          let pk = 0; for (let i = 0; i < ch.length; i += 4) pk = Math.max(pk, Math.abs(ch[i]));
+          if (pk === 0) { if (++silentClips >= 2) setStatus("The phone is giving this app silence from the microphone. Close the app fully (swipe it away), reopen it and try again, or try it in Safari itself.", true); return; }
+          silentClips = 0;
+          const res = analyseRecording(ch, buf.sampleRate);
+          if (res.error) { if (!/almost silent/.test(res.error)) setStatus(res.error, true); return; }
+          liveTaps.push(res); if (liveTaps.length > 7) liveTaps.shift();
+          const c = combineTaps(liveTaps);
+          showResult({ ...c, clipped: res.clipped, quiet: res.quiet }, false);
+          $("listen-sub").textContent = "recording in 4 s clips · tap to stop";
+        } catch {}
+      };
+      try { r.start(); } catch { setStatus("The microphone couldn't record here. Upload a recording of 3 or 4 taps instead.", true); return; }
+      setTimeout(() => { try { r.state !== "inactive" && r.stop(); } catch {} }, 4000);
+    };
+    setStatus("Live listening got no sound, so the app is recording 4-second clips instead. Tap 3 or 4 times in each clip; the reading updates after each one.");
+    $("listen-sub").textContent = "recording in 4 s clips · tap to stop";
+    clip();
+  }
   function stopListening() {
     live = false;
+    try { rec && rec.state !== "inactive" && rec.stop(); } catch {}
+    rec = null;
     try { proc && proc.disconnect(); stream && stream.getTracks().forEach(t => t.stop()); ctx && ctx.close(); } catch {}
     $("listen-label").textContent = "Listen for taps"; $("listen-sub").textContent = "then tap the strings"; $("listen").classList.remove("listening");
   }
 
   // ---------- events ----------
-  $("listen").onclick = () => live ? stopListening() : startListening();
+  $("listen").onclick = () => {
+    // On iPhone the audio may only start on a second tap; that tap starts it rather than stopping.
+    if (live && !rec && ctx && ctx.state !== "running" && ctx.state !== "closed") { try { ctx.resume(); } catch {} $("listen-sub").textContent = "tap the strings"; return; }
+    live ? stopListening() : startListening();
+  };
   $("file").onchange = async e => {
     const f = e.target.files[0]; e.target.value = ""; if (!f) return;
     setStatus("Reading " + f.name + "…");
