@@ -136,3 +136,16 @@ test("picks the phone's own microphone over AirPods", async () => {
   assert.equal(choosePhoneMic([{ kind: "audioinput", deviceId: "", label: "" }]), null);
   assert.ok(HEADSET_MIC.test("AirPods Max") && !HEADSET_MIC.test("iPhone Microphone"));
 });
+
+test("the boom of a palm or frame below the band isn't read as a slack bed", () => {
+  // With the iPhone's Standard mic mode the low thud comes through unfiltered. Its tail slopes
+  // down from the bottom of the band (280 Hz), which used to read as about 12 lb.
+  const sr = 48000, x = tap({ amp: 0.02, noise: 0.0005, taps: [0.4, 1.2, 2.0] });
+  for (const t0 of [0.4, 1.2, 2.0]) {
+    const i0 = Math.round(t0 * sr);
+    for (let i = 0; i < 0.6 * sr && i0 + i < x.length; i++) x[i0 + i] += 1.0 * Math.exp(-i / sr / 0.06) * Math.sin(2 * Math.PI * 240 * i / sr);
+  }
+  const r = analyseRecording(x, sr);
+  assert.ok(!r.error, r.error);
+  assert.ok(Math.abs(r.hz / 540 - 1) < 0.003, `${r.hz}`);
+});
