@@ -136,18 +136,25 @@ export function analyseTap(x, sr, start, end, noise) {
     // smooth the noise a little and take off 1.5x of it
     mag = raw.map((v, i) => Math.max(0, v - 1.5 * Math.max(nm[i], nm[i - 1] || 0, nm[i + 1] || 0)));
   }
-  let top = 0;
-  for (let i = 0; i < mag.length; i++) if (mag[i] > mag[top]) top = i;
+  // The loudest real peak. The low end of the band can sit on the tail of the palm's thud or the
+  // frame's own boom (well below any string bed), which slopes down from 280 Hz with no peak of
+  // its own: a bin there only counts if the spectrum dips below it on the low side too.
+  const dip = Math.round(30 / binHz);
+  const peak = (m, i) => i > 0 && i < m.length - 1 && m[i] >= m[i - 1] && m[i] > m[i + 1]
+    && Math.min(...m.subarray(Math.max(0, i - dip), i)) < 0.5 * m[i] && i >= Math.min(dip, 8);
+  const loudest = m => { let t = -1; for (let i = 0; i < m.length; i++) if (peak(m, i) && (t < 0 || m[i] > m[t])) t = i; return t; };
+  let top = loudest(mag);
   // if taking the room sound off left nothing standing, the "room sound" was really part of the
   // ring: fall back to the plain spectrum rather than reporting no ring
-  if (mag !== raw && !(mag[top] > 0)) { mag = raw; top = 0; for (let i = 0; i < mag.length; i++) if (mag[i] > mag[top]) top = i; }
+  if (mag !== raw && !(mag[top] > 0)) { mag = raw; top = loudest(mag); }
+  if (top < 0) return { hz: 0, clarity: 0, mag: raw, binHz, b0 };
   const sorted = Array.from(raw).sort((p, q) => p - q), median = sorted[sorted.length >> 1] || 1e-12;
   if (!(mag[top] > 0)) return { hz: 0, clarity: 0, mag: raw, binHz, b0 };
   // The bed's higher modes ring 1.5x, 1.7x and 2x above the fundamental, and an off-centre tap can
   // make one of them the loudest. So take the lowest clear peak, not simply the loudest.
   let best = top;
   for (let i = 2; i < top; i++) {
-    if (mag[i] >= mag[i - 1] && mag[i] > mag[i + 1] && mag[i] >= 0.35 * mag[top] && mag[i] > 10 * median
+    if (peak(mag, i) && mag[i] >= 0.35 * mag[top] && mag[i] > 10 * median
         && mag[i] >= Math.max(...mag.subarray(Math.max(0, i - 20), i + 21))) { best = i; break; }
   }
   const clarity = mag[best] / median;
