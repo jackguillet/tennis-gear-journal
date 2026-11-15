@@ -162,7 +162,7 @@ export function analyseTap(x, sr, start, end, noise) {
 }
 
 // Find every tap in a recording and return the median result.
-export function analyseRecording(x, sr) {
+export function analyseRecording(x, sr, opts = {}) {
   const bp = bandpass(sr), hop = Math.round(0.005 * sr), env = [];
   let rawPeak = 0, clipped = 0;
   for (let i = 0; i + hop <= x.length; i += hop) {
@@ -186,17 +186,19 @@ export function analyseRecording(x, sr) {
   // The quietest 0.25 s with no tap in it is the room's own sound.
   const win = Math.round(0.25 * sr / hop);
   let noise = null, quietest = Infinity;
-  for (let i = 0; i + win <= env.length; i += 2) {
+  for (let i = 0; opts.hum !== false && i + win <= env.length; i += 2) {
     if (taps.some(t => t + 2 * gap > i && t < i + win + 1)) continue;
     let m = 0; for (let j = i; j < i + win; j++) m = Math.max(m, env[j]);
     if (m < quietest) { quietest = m; noise = i * hop; }
   }
   // a tap's ring starts a little before the band-passed envelope peaks
-  const res = taps.map((t, k) => analyseTap(x, sr, Math.max(0, (t - 1) * hop), k + 1 < taps.length ? (taps[k + 1] - 1) * hop : x.length, noise))
-    .filter(r => r && r.clarity > 6);
+  const all = taps.map((t, k) => analyseTap(x, sr, Math.max(0, (t - 1) * hop), k + 1 < taps.length ? (taps[k + 1] - 1) * hop : x.length, noise));
+  // the strongest attempt, kept so the screen can show what a failed knock sounded like
+  const tried = all.filter(Boolean).sort((p, q) => q.clarity - p.clarity)[0] || null;
+  const res = all.filter(r => r && r.clarity > 4.5);
   if (!res.length) {
     const quiet = peak < floor * 8 || peak < 0.003;
-    return { error: quiet
+    return { best: tried, level: rawPeak, error: quiet
       ? "The tap was too quiet to hear over the room. Tap firmly with the heel of your palm and hold the phone's bottom edge closer."
       : "No clear ring found. Tap the centre of the strings, not the frame, and let go straight away so the strings can ring." };
   }
@@ -207,7 +209,7 @@ export function analyseRecording(x, sr) {
   mid = kept[kept.length >> 1];
   const spread = kept.length > 1 ? (kept[kept.length - 1].hz - kept[0].hz) / mid.hz : 0;
   const ref = noise == null ? floor : quietest;
-  return { ...mid, taps: kept.length, dropped: res.length - kept.length, spread, clipped: clipped > 3, quiet: peak < ref * 20 };
+  return { ...mid, taps: kept.length, dropped: res.length - kept.length, spread, clipped: clipped > 3, quiet: peak < ref * 20, level: rawPeak };
 }
 
 // Combine taps heard one at a time (live listening). Taps more than 4% from the median of the

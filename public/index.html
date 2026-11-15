@@ -411,6 +411,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
       <canvas id="spec" aria-label="Sound spectrum of the last tap"></canvas>
       <button class="listen" id="listen" type="button"><span id="listen-label">Listen for taps</span><small id="listen-sub">then tap the strings</small></button>
       <div class="status" id="status" aria-live="polite"></div>
+      <div class="small mic-diag" id="mic-diag" hidden></div>
       <p class="tip">Take the dampener out and any AirPods out. Hold the phone's bottom edge 5–10 cm from the centre of the strings. Tap the centre with the heel of your palm (or a pen), about once a second.</p>
       <div class="measure-btns">
         <button class="btn primary" id="save" type="button" hidden>Save this reading</button>
@@ -1897,6 +1898,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     return { g, w, h };
   }
+  let failShown = null; // the last knock that gave no clear ring, drawn so you can see what was heard
   function drawSpectrum() {
     const { g, w, h } = prep($("spec"));
     const padB = 18, H = h - padB;
@@ -1906,16 +1908,18 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       g.beginPath(); g.moveTo(x, 4); g.lineTo(x, H); g.stroke();
       g.textAlign = "center"; g.fillText(f + " Hz", x, h - 4);
     }
-    if (!last || !last.mag) return;
-    const m = last.mag, max = Math.max(...m);
+    const sp = failShown || last;
+    if (!sp || !sp.mag) return;
+    const m = sp.mag, max = Math.max(...m) || 1;
     g.beginPath();
     for (let i = 0; i < m.length; i++) {
-      const f = (last.b0 + i) * last.binHz, x = (f - LO) / (HI - LO) * w, y = H - (m[i] / max) * (H - 8);
+      const f = (sp.b0 + i) * sp.binHz, x = (f - LO) / (HI - LO) * w, y = H - (m[i] / max) * (H - 8);
       i ? g.lineTo(x, y) : g.moveTo(x, y);
     }
     g.lineTo(w, H); g.lineTo(0, H); g.closePath();
     g.fillStyle = css("--court-soft"); g.fill();
-    g.strokeStyle = css("--court"); g.lineWidth = 1.5; g.stroke();
+    g.strokeStyle = failShown ? css("--muted") : css("--court"); g.lineWidth = 1.5; g.stroke();
+    if (failShown) return; // a failed knock: show its sound, but no pitch marker
     const px = (last.hz - LO) / (HI - LO) * w;
     g.fillStyle = css("--optic"); g.strokeStyle = css("--ink"); g.lineWidth = 1;
     g.beginPath(); g.arc(px, 8, 5, 0, Math.PI * 2); g.fill(); g.stroke();
@@ -1952,7 +1956,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // ---------- results ----------
   function showResult(res, sample) {
     if (res.error) { setStatus(res.error, true); return; }
-    last = res; lastIsSample = !!sample; lastSaved = false;
+    last = res; lastIsSample = !!sample; failShown = null; lastSaved = false;
     if (sample) setStatus("This is a made-up sample so you can see the display. Tap your own racket to measure it.");
     else {
       let msg = res.taps > 1 ? `Median of ${res.taps} taps.` : "One clear tap.";
@@ -2011,10 +2015,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // Taps are found on a band-passed copy (the band string beds ring in), so a quiet ring still
     // stands out from room rumble and handling noise. The analysis uses the raw sound.
     const ring = new Float32Array(Math.round(sr * 1.5)), bp = bandpass(sr);
-    let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0, nextTime = -1, lastGap = -Infinity;
+    let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0;
     // Health checks: iOS can hand over a microphone that sends nothing (another app holds it, a call
     // or Siri interrupted it), which looks exactly like "it didn't hear my tap".
-    let zeros = 0, warnedSilent = false, lastRoom = 0, meterPk = 0;
+    let zeros = 0, warnedSilent = false, lastRoom = 0, meterPk = 0, heard = 0, lastOutcome = "–", blocks = 0;
     const me = stream;
     if (track) {
       track.onmute = () => { if (live && stream === me) setStatus("The microphone was interrupted (a call, Siri or another app). Press Listen again.", true); };
@@ -2028,14 +2032,11 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     }, 2500);
     proc = ctx.createScriptProcessor(2048, 1, 1);
     proc.onaudioprocess = ev => {
-      const d = ev.inputBuffer.getChannelData(0); let pk = 0, any = false;
+      const d = ev.inputBuffer.getChannelData(0); let pk = 0, any = false; blocks++;
       for (let i = 0; i < d.length; i += 7) if (d[i] !== 0) { any = true; break; }
       zeros = any ? 0 : zeros + d.length;
       if (zeros > 1.5 * sr && !warnedSilent && filled > 3 * sr) { warnedSilent = true; setStatus("The microphone is sending pure silence. Another app may be using it: close it, then press Listen again.", true); }
       if (any) warnedSilent = false;
-      // If the phone was too busy and a block of sound went missing, a tap spanning it can't be trusted.
-      if (nextTime >= 0 && ev.playbackTime - nextTime > 0.5 * d.length / sr) lastGap = filled;
-      nextTime = ev.playbackTime + d.length / sr;
       for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
       filled += d.length;
       const thr = Math.max(0.0015, noise * 5);
@@ -2045,6 +2046,10 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       if (filled - lastRoom > 0.2 * sr) {
         lastRoom = filled;
         const bars = Math.max(0, Math.min(8, Math.round(8 + Math.log10(meterPk + 1e-9) * 2.5)));
+        // What the microphone is doing, in plain numbers, to tell "not hearing" from "not calculating".
+        const db = meterPk > 0 ? Math.round(20 * Math.log10(meterPk)) + " dB" : "silent";
+        $("mic-diag").hidden = false;
+        $("mic-diag").textContent = "Mic check: " + (label || "microphone") + " · " + Math.round(sr / 100) / 10 + " kHz · audio " + ctx.state + " · sound " + db + " · knocks heard " + heard + " · last: " + lastOutcome;
         $("listen-sub").textContent = "mic " + "▮".repeat(bars) + "▯".repeat(8 - bars) + (liveTaps.length ? " · " + liveTaps.length + (liveTaps.length === 1 ? " tap" : " taps") : " · tap the strings");
       }
       if (armedAt < 0) {
@@ -2058,14 +2063,23 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       armPk = Math.max(armPk, pk);
       if (filled - armedAt < 0.32 * sr) return;
       // this tap, plus up to 0.45 s of room sound before it (used to tell hum from the ring)
-      const pre = Math.min(Math.round(0.45 * sr), Math.max(0, filled - (filled - armedAt) - lastGap));
+      const pre = Math.min(Math.round(0.45 * sr), armedAt);
       const n = Math.min(ring.length, filled - armedAt + pre), seg = new Float32Array(n);
       for (let i = 0; i < n; i++) seg[i] = ring[(w - n + i + ring.length) % ring.length];
-      const spansGap = lastGap > armedAt - 0.02 * sr;
       armedAt = -1; cool = 0.12 * sr;
-      if (spansGap) { setStatus("Part of that tap went missing (the phone was busy). Tap again.", true); return; }
-      const res = analyseRecording(seg, sr);
-      if (res.error) { setStatus(res.error, true); return; }
+      heard++;
+      let res = analyseRecording(seg, sr);
+      // if taking the room's hum off lost the ring, try once more on the plain sound
+      if (res.error) { const plain = analyseRecording(seg, sr, { hum: false }); if (!plain.error) res = plain; }
+      const lvl = r => r && r.level ? " at " + Math.round(20 * Math.log10(r.level)) + " dB" : "";
+      lastOutcome = res.error
+        ? "no clear ring" + lvl(res) + (res.best && res.best.hz ? " (best guess " + res.best.hz.toFixed(0) + " Hz, clarity " + res.best.clarity.toFixed(1) + ", needs 4.5)" : "")
+        : res.hz.toFixed(0) + " Hz" + lvl(res) + ", clarity " + res.clarity.toFixed(0);
+      if (res.error) {
+        // show what the knock sounded like, so a screenshot tells us what the phone heard
+        if (res.best && res.best.mag) { failShown = res.best; drawSpectrum(); }
+        setStatus(res.error, true); return;
+      }
       // live taps build up: show the median of the last seven, leaving out strays
       liveTaps.push(res); if (liveTaps.length > 7) liveTaps.shift();
       const c = combineTaps(liveTaps);
@@ -2098,9 +2112,12 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
           const buf = await ac.decodeAudioData(await new Blob(parts, { type: r.mimeType || type || "" }).arrayBuffer());
           const ch = buf.getChannelData(0);
           let pk = 0; for (let i = 0; i < ch.length; i += 4) pk = Math.max(pk, Math.abs(ch[i]));
-          if (pk === 0) { if (++silentClips >= 2) setStatus("The phone is giving this app silence from the microphone. Close the app fully (swipe it away), reopen it and try again, or try it in Safari itself.", true); return; }
+          if (pk === 0) { $("mic-diag").hidden = false; $("mic-diag").textContent = "Mic check (recording 4 s clips): the clip was pure silence"; if (++silentClips >= 2) setStatus("The phone is giving this app silence from the microphone. Close the app fully (swipe it away), reopen it and try again, or try it in Safari itself.", true); return; }
           silentClips = 0;
-          const res = analyseRecording(ch, buf.sampleRate);
+          let res = analyseRecording(ch, buf.sampleRate);
+          if (res.error) { const plain = analyseRecording(ch, buf.sampleRate, { hum: false }); if (!plain.error) res = plain; }
+          $("mic-diag").hidden = false;
+          $("mic-diag").textContent = "Mic check (recording 4 s clips): sound " + Math.round(20 * Math.log10(pk)) + " dB · last clip: " + (res.error ? "no ring found" : res.hz.toFixed(0) + " Hz from " + res.taps + " taps");
           if (res.error) { if (!/almost silent/.test(res.error)) setStatus(res.error, true); return; }
           liveTaps.push(res); if (liveTaps.length > 7) liveTaps.shift();
           const c = combineTaps(liveTaps);
