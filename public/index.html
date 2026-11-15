@@ -415,6 +415,7 @@ body.has-tabs .toast { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
       <p class="tip">Take the dampener out and any AirPods out. Hold the phone's bottom edge 5–10 cm from the centre of the strings. Tap the centre with the heel of your palm (or a pen), about once a second.</p>
       <div class="measure-btns">
         <button class="btn primary" id="save" type="button" hidden>Save this reading</button>
+        <button class="btn" id="share-rec" type="button" hidden>Send the last 20 s of sound</button>
         <label class="btn" for="file">Upload a recording<input id="file" type="file" accept="audio/*,video/*"></label>
       </div>
     </section>
@@ -1898,6 +1899,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     return { g, w, h };
   }
+  let rawRec = null;    // the last 20 s the microphone heard, exactly as the app got it, to share for help
   let failShown = null; // the last knock that gave no clear ring, drawn so you can see what was heard
   function drawSpectrum() {
     const { g, w, h } = prep($("spec"));
@@ -2016,6 +2018,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     // stands out from room rumble and handling noise. The analysis uses the raw sound.
     const ring = new Float32Array(Math.round(sr * 1.5)), bp = bandpass(sr);
     let w = 0, noise = 0.001, armedAt = -1, armPk = 0, cool = 0, filled = 0;
+    const rec20 = rawRec = { buf: new Float32Array(Math.round(sr * 20)), w: 0, filled: 0, sr, label };
     // Health checks: iOS can hand over a microphone that sends nothing (another app holds it, a call
     // or Siri interrupted it), which looks exactly like "it didn't hear my tap".
     let zeros = 0, warnedSilent = false, lastRoom = 0, meterPk = 0, heard = 0, lastOutcome = "–", blocks = 0;
@@ -2038,6 +2041,9 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       if (zeros > 1.5 * sr && !warnedSilent && filled > 3 * sr) { warnedSilent = true; setStatus("The microphone is sending pure silence. Another app may be using it: close it, then press Listen again.", true); }
       if (any) warnedSilent = false;
       for (let i = 0; i < d.length; i++) { ring[w] = d[i]; w = (w + 1) % ring.length; pk = Math.max(pk, Math.abs(bp(d[i]))); }
+      for (let i = 0; i < d.length; i++) { rec20.buf[rec20.w] = d[i]; rec20.w = (rec20.w + 1) % rec20.buf.length; }
+      rec20.filled += d.length;
+      if (rec20.filled > 2 * sr) $("share-rec").hidden = false;
       filled += d.length;
       const thr = Math.max(0.0015, noise * 5);
       // A live sound meter, so you can see the microphone is hearing something at all.
@@ -2139,6 +2145,27 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     try { proc && proc.disconnect(); stream && stream.getTracks().forEach(t => t.stop()); ctx && ctx.close(); } catch {}
     $("listen-label").textContent = "Listen for taps"; $("listen-sub").textContent = "then tap the strings"; $("listen").classList.remove("listening");
   }
+
+  // A WAV of the last 20 s the microphone heard, to send when a reading looks wrong.
+  function wavOf(x, sr) {
+    const b = new DataView(new ArrayBuffer(44 + x.length * 2)), str = (o, t) => { for (let i = 0; i < t.length; i++) b.setUint8(o + i, t.charCodeAt(i)); };
+    str(0, "RIFF"); b.setUint32(4, 36 + x.length * 2, true); str(8, "WAVEfmt "); b.setUint32(16, 16, true); b.setUint16(20, 1, true); b.setUint16(22, 1, true);
+    b.setUint32(24, sr, true); b.setUint32(28, sr * 2, true); b.setUint16(32, 2, true); b.setUint16(34, 16, true); str(36, "data"); b.setUint32(40, x.length * 2, true);
+    for (let i = 0; i < x.length; i++) b.setInt16(44 + i * 2, Math.max(-32768, Math.min(32767, Math.round(x[i] * 32767))), true);
+    return new Blob([b.buffer], { type: "audio/wav" });
+  }
+  $("share-rec").onclick = async () => {
+    const r = rawRec; if (!r) return;
+    const n = Math.min(r.filled, r.buf.length), x = new Float32Array(n);
+    for (let i = 0; i < n; i++) x[i] = r.buf[(r.w - n + i + r.buf.length) % r.buf.length];
+    const name = "taps-" + new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-") + "-" + Math.round(r.sr) + "Hz.wav";
+    const file = new File([wavOf(x, Math.round(r.sr))], name, { type: "audio/wav" });
+    try {
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: "Tap recording" }); return; }
+    } catch (e) { if (e && e.name === "AbortError") return; }
+    const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  };
 
   // ---------- events ----------
   $("listen").onclick = () => {
