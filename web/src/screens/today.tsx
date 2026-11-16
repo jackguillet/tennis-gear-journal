@@ -7,17 +7,17 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
+import { Eyebrow } from "@/components/eyebrow"
 import { LifeRing } from "@/components/life-ring"
 import { TitleBar } from "@/components/title-bar"
 import { toneBadge, toneBar, toneDot, toneText } from "@/components/tone"
 import { KIND_NAME, ago, dayName, dur, hrs, shortDate, today, unitFor, weight } from "@/lib/format"
 import { baseline, kgOf, latestReading, racketState } from "@/lib/racket"
-import { addPlay, mainRacketId, makeMain, removePlay, restorePlay, useStore, type Play, type PlayKind } from "@/lib/store"
+import { go } from "@/lib/route"
+import { addPlay, addRacket, mainRacketId, setPrefs, makeMain, removePlay, restorePlay, useStore, type Play, type PlayKind } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { LogDrawer, type LogChoice } from "./log-drawer"
 
-const Eyebrow = ({ children, className }: { children: React.ReactNode; className?: string }) =>
-  <p className={cn("text-xs font-semibold tracking-[0.14em] text-muted-foreground uppercase", className)}>{children}</p>
 
 export function Today() {
   const rackets = useStore((s) => s.rackets)
@@ -52,7 +52,7 @@ export function Today() {
           <CardContent className="grid gap-3">
             <p className="text-xl font-bold">Set up your racket</p>
             <p className="text-muted-foreground">Add its name, string, tension and the day it was strung, and Today shows how much life is left in the strings.</p>
-            <Button asChild size="lg" className="w-fit"><a href="/?tab=gear">Set up my racket</a></Button>
+            <Button size="lg" className="w-fit" onClick={() => go(`/racket/${addRacket()}/edit`)}>Set up my racket</Button>
           </CardContent>
         </Card>
       </>
@@ -76,7 +76,7 @@ export function Today() {
       <TitleBar title="Today" kicker={kicker} />
 
       {/* String life of the racket you play with */}
-      <a href="/?tab=gear" aria-label={`${main.name}: ${st.label}. ${st.line}`} className="block rounded-xl focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
+      <a href={`#/racket/${mainId}`} aria-label={`${main.name}: ${st.label}. ${st.line}`} className="block rounded-xl focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none">
         <Card className="flex-row items-center gap-5 px-5 py-5">
           <LifeRing left={st.left} tone={st.tone} />
           <div className="grid min-w-0 gap-1">
@@ -94,10 +94,10 @@ export function Today() {
             return (
               <div key={id} className={cn("flex items-center gap-3 px-5 py-3", i > 0 && "border-t")}>
                 <span className={cn("size-2.5 shrink-0 rounded-full", toneDot[s.tone])} aria-hidden="true" />
-                <span className="min-w-0 flex-1">
+                <a href={`#/racket/${id}`} className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">{rackets[id].name}</span>
                   <span className="block text-sm text-muted-foreground">{s.left === null ? s.label : `${s.left}% left · ${hrs(s.minutes)} h`}</span>
-                </span>
+                </a>
                 <Button variant="outline" size="sm" className="rounded-full" onClick={() => { makeMain(id); toast(`${rackets[id].name} is your main racket. Today and one-tap logging follow it.`) }}>Make main</Button>
               </div>
             )
@@ -106,7 +106,7 @@ export function Today() {
       )}
 
       <div className="grid grid-cols-2 gap-3">
-        <a href="/?tab=gear" className="block rounded-xl">
+        <a href="#/gear" className="block rounded-xl">
           <Card className="h-full gap-2 px-5 py-4">
             <Eyebrow>Shoes</Eyebrow>
             {shoe && wear ? (
@@ -123,7 +123,7 @@ export function Today() {
             )}
           </Card>
         </a>
-        <a href="/?tab=measure" className="block rounded-xl">
+        <a href="/?tab=measure" onClick={() => setPrefs({ racket: mainId })} className="block rounded-xl">
           <Card className="h-full gap-2 px-5 py-4">
             <Eyebrow>Tension</Eyebrow>
             {lastR ? (

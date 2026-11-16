@@ -72,14 +72,35 @@ export const getState = () => state
 function applyLocal(s: State, op: Op): State {
   const rackets = { ...s.rackets }
   const edit = (id: unknown, f: (r: Racket) => Racket) => { const r = rackets[id as string]; if (r) rackets[id as string] = f(r) }
+  const all = (f: (r: Racket) => Racket) => { for (const id of Object.keys(rackets)) rackets[id] = f(rackets[id]) }
   switch (op.op) {
+    case "racket.put": { const old = rackets[op.id as string]; rackets[op.id as string] = { ...(op.data as Racket), readings: old?.readings || [], plays: old?.plays || [], jobs: old?.jobs || [] }; break }
+    case "racket.delete": delete rackets[op.id as string]; break
     case "play.add": edit(op.racketId, (r) => (r.plays || []).some((p) => p.id === op.id) ? r : { ...r, plays: [...(r.plays || []), { id: op.id as string, d: op.d as string, min: op.min as number, kind: op.kind as PlayKind }] }); break
-    case "play.delete": for (const id of Object.keys(rackets)) rackets[id] = { ...rackets[id], plays: (rackets[id].plays || []).filter((p) => p.id !== op.id) }; break
+    case "play.delete": all((r) => ({ ...r, plays: (r.plays || []).filter((p) => p.id !== op.id) })); break
+    case "reading.add": edit(op.racketId, (r) => r.readings.some((x) => x.id === op.id) ? r : { ...r, readings: [...r.readings, { id: op.id as string, t: op.t as number, hz: op.hz as number, ...(op.s ? { s: op.s as Record<string, unknown> } : {}) }] }); break
+    case "reading.delete": all((r) => ({ ...r, readings: r.readings.filter((x) => x.id !== op.id) })); break
+    case "job.add": { const { op: _o, racketId, ...j } = op; edit(racketId, (r) => (r.jobs || []).some((x) => x.id === j.id) ? r : { ...r, jobs: [...(r.jobs || []), j as unknown as Job] }); break }
+    case "job.delete": all((r) => ({ ...r, jobs: (r.jobs || []).filter((x) => x.id !== op.id) })); break
+    case "shoe.put": return { ...s, shoes: [...s.shoes.filter((x) => x.id !== op.id), { id: op.id as string, ...(op.data as Omit<Shoe, "id">) }] }
+    case "shoe.delete": return { ...s, shoes: s.shoes.filter((x) => x.id !== op.id) }
     default: return s
   }
   return { ...s, rackets }
 }
-function queue(op: Op) { const next = applyLocal(state, op); set({ ...next, outbox: [...state.outbox, op] }); save(); syncSoon() }
+function queue(op: Op) {
+  const next = applyLocal(state, op)
+  // A newer edit of the same racket replaces the queued one in place, so it still goes before that racket's other changes.
+  const i = op.op === "racket.put" ? state.outbox.findIndex((o) => o.op === "racket.put" && o.id === op.id) : -1
+  const outbox = i >= 0 ? state.outbox.map((o, k) => (k === i ? op : o)) : [...state.outbox, op]
+  set({ ...next, outbox }); save(); syncSoon()
+  return op
+}
+// Undo: drop queued changes that haven't been sent yet, then re-send what they removed (safe to send twice).
+function undo(drop: Op[], resend: Op[]) {
+  set({ outbox: state.outbox.filter((o) => !drop.includes(o)) })
+  resend.forEach(queue)
+}
 
 // ---------- sync ----------
 let syncing = false, again = false, timer: ReturnType<typeof setTimeout> | undefined
@@ -152,7 +173,79 @@ export function addPlay(racketId: string, p: Omit<Play, "id">): Play {
 }
 export function removePlay(id: string) { queue({ op: "play.delete", id }) }
 export function restorePlay(racketId: string, p: Play) {
-  // Undo: drop the delete if it hasn't been sent yet, and send the session again (safe to send twice).
-  set({ outbox: state.outbox.filter((o) => !(o.op === "play.delete" && o.id === p.id)) })
-  queue({ op: "play.add", id: p.id, racketId, d: p.d, min: p.min, kind: p.kind })
+  undo(state.outbox.filter((o) => o.op === "play.delete" && o.id === p.id), [{ op: "play.add", id: p.id, racketId, d: p.d, min: p.min, kind: p.kind }])
+}
+
+// ---------- rackets ----------
+const racketData = (r: Partial<Racket>) => ({
+  name: r.name, head: r.head, gauge: r.gauge, material: r.material, pattern: r.pattern || "16x19",
+  weight: r.weight ?? null, stringName: r.stringName ?? null, strungKg: r.strungKg ?? null,
+  strungOn: r.strungOn ?? null, calib: r.calib || 1, calibAt: r.calibAt ?? null,
+})
+export function putRacket(id: string, patch: Partial<Racket>) {
+  const r = { ...(state.rackets[id] || {}), ...patch }
+  queue({ op: "racket.put", id, data: racketData(r) })
+}
+export function addRacket(): string {
+  const id = uid()
+  putRacket(id, { name: "Racket " + (Object.keys(state.rackets).length + 1), head: 100, gauge: 1.25, material: "poly", pattern: "16x19", calib: 1, calibAt: null })
+  return id
+}
+const racketOps = (id: string, r: Racket): Op[] => [
+  { op: "racket.put", id, data: racketData(r) },
+  ...r.readings.map((x) => ({ op: "reading.add", id: x.id, racketId: id, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) })),
+  ...(r.plays || []).map((p) => ({ op: "play.add", id: p.id, racketId: id, d: p.d, min: p.min, kind: p.kind })),
+  ...(r.jobs || []).map((j) => ({ op: "job.add", racketId: id, ...j })),
+]
+// Returns an undo.
+export function deleteRacket(id: string): () => void {
+  const gone = state.rackets[id]
+  const del = queue({ op: "racket.delete", id })
+  return () => undo([del], racketOps(id, gone))
+}
+export function removeReading(racketId: string, x: Reading): () => void {
+  const del = queue({ op: "reading.delete", id: x.id })
+  return () => undo([del], [{ op: "reading.add", id: x.id, racketId, t: x.t, hz: x.hz, ...(x.s ? { s: x.s } : {}) }])
+}
+
+// ---------- strings ----------
+// The strings in the racket now, as a history record that ended on `endedOn` (null when Strung on isn't set).
+function currentJob(r: Racket, endedOn: string, reason: string): Job | null {
+  if (!r.strungOn) return null
+  return { id: uid(), from: r.strungOn, to: endedOn < r.strungOn ? r.strungOn : endedOn, reason, stringName: r.stringName || null, material: r.material, gauge: r.gauge, strungKg: r.strungKg ?? null }
+}
+// "Strings broke": the set goes to the history as broken and the racket waits for a restring.
+export function stringsBroke(id: string, today: string): (() => void) | null {
+  const r = state.rackets[id]; const job = r && currentJob(r, today, "broke")
+  if (!r || !job) return null
+  const was = r.strungOn
+  const add = queue({ op: "job.add", racketId: id, ...job })
+  putRacket(id, { strungOn: null })
+  return () => { undo([add], [{ op: "job.delete", id: job.id }]); putRacket(id, { strungOn: was }) }
+}
+export interface Restring { day: string; reason: string; stringName: string | null; gauge: number; material: string; strungKg: number | null }
+// "Restrung": the strings coming out go to the history (unless this corrects a restring made the same day).
+export function restrung(id: string, x: Restring): Job | null {
+  const r = state.rackets[id]; if (!r) return null
+  const job = r.strungOn !== x.day ? currentJob(r, x.day, x.reason) : null
+  if (job) queue({ op: "job.add", racketId: id, ...job })
+  putRacket(id, { strungOn: x.day, stringName: x.stringName, gauge: x.gauge, material: x.material, strungKg: x.strungKg })
+  return job
+}
+export function removeJob(racketId: string, j: Job): () => void {
+  const del = queue({ op: "job.delete", id: j.id })
+  return () => undo([del], [{ op: "job.add", racketId, ...j }])
+}
+
+// ---------- shoes ----------
+const shoeData = (x: Shoe) => ({ name: x.name, startedOn: x.startedOn, retiredOn: x.retiredOn || null, lifeHours: x.lifeHours || 60 })
+export const putShoe = (x: Shoe) => queue({ op: "shoe.put", id: x.id, data: shoeData(x) })
+// A new pair goes into use; the pair worn until then is retired that day.
+export function newPair(name: string, startedOn: string, lifeHours: number, current: Shoe | null) {
+  if (current) putShoe({ ...current, retiredOn: startedOn })
+  putShoe({ id: uid(), name, startedOn, retiredOn: null, lifeHours })
+}
+export function removeShoe(x: Shoe): () => void {
+  const del = queue({ op: "shoe.delete", id: x.id })
+  return () => undo([del], [{ op: "shoe.put", id: x.id, data: shoeData(x) }])
 }

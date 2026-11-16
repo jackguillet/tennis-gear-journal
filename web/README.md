@@ -12,4 +12,6 @@ it is served at **`/next/`**, beside the current app at `/`, on the same site an
 
 **Components.** `src/components/ui/` holds shadcn's own component source (new-york style). Add more with the shadcn CLI (`npx shadcn@latest add <name>` from this folder; `components.json` is set up), or copy the file from the shadcn repo's `apps/v4/registry/new-york-v4/ui/` and change the `cn` import to `@/lib/utils`. The theme in `src/index.css` maps the Courtside look onto shadcn's tokens: court blue is `primary`, ball yellow is `optic`, and `good` / `warn` / `bad` are the status colours.
 
-**Order.** 1 Today (done) · 2 Gear and the racket page · 3 Courts · 4 Settings · 5 Measure (wraps the existing listening code, unchanged) · 6 swap `/next/` to `/` and retire `public/index.html`.
+**Pages** are in the URL hash: `#/` Today, `#/gear`, `#/racket/<id>` and `#/racket/<id>/edit` (`src/lib/route.ts`). The tension chart (Recharts, via shadcn's `chart`) loads only when its tab opens.
+
+**Order.** 1 Today (done) · 2 Gear and the racket page (done) · 3 Courts · 4 Settings · 5 Measure (wraps the existing listening code, unchanged) · 6 swap `/next/` to `/` and retire `public/index.html`.

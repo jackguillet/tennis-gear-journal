@@ -7,12 +7,12 @@ const Racket = (p: React.SVGProps<SVGSVGElement>) => (
     <ellipse cx="10" cy="9" rx="6" ry="7" transform="rotate(-40 10 9)" /><path d="M14.5 13.5l6 7M6.5 5.5l7 7M5 9.5l5.5-5.5M9 13.5l5.5-5.5" />
   </svg>
 )
-// Only Today is in the new app so far; the other tabs open in the current app.
+// Today and Gear are in the new app; Measure and Courts still open in the current app.
 const TABS = [
-  { id: "today", label: "Today", Icon: House, href: "/next/" },
+  { id: "today", label: "Today", Icon: House, href: "#/" },
   { id: "measure", label: "Measure", Icon: Activity, href: "/?tab=measure" },
   { id: "courts", label: "Courts", Icon: CalendarDays, href: "/?tab=courts" },
-  { id: "gear", label: "Gear", Icon: Racket, href: "/?tab=gear" },
+  { id: "gear", label: "Gear", Icon: Racket, href: "#/gear" },
 ]
 
 export function TabBar({ active }: { active: string }) {
