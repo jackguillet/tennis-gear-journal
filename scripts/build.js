@@ -21,6 +21,8 @@ if (typeof jobs.stringStats !== "function") throw new Error("public/stringjobs.j
 new vm.Script(await readFile(new URL("../public/stc.js", import.meta.url), "utf8"), { filename: "public/stc.js" });
 new vm.Script(await readFile(new URL("../public/sw.js", import.meta.url), "utf8"), { filename: "public/sw.js" });
 JSON.parse(await readFile(new URL("../public/manifest.webmanifest", import.meta.url), "utf8"));
+// The new front end (web/, React + shadcn/ui) is built by `vite build` just before this check, into public/next/.
+if (!/<script type="module"[^>]+src="\/next\/assets\//.test(await readFile(new URL("../public/next/index.html", import.meta.url), "utf8").catch(() => ""))) throw new Error("public/next/index.html is missing: run `vite build --config web/vite.config.ts` first.");
 
 const routes = { "api/sync.js": ["POST"], "api/auth.js": ["GET", "POST", "PUT", "PATCH", "DELETE"], "api/tokens.js": ["GET", "POST", "DELETE"], "api/mcp.js": ["POST", "GET", "DELETE"], "api/calendar.js": ["GET"], "api/gametime.js": ["POST", "OPTIONS"], "api/push.js": ["GET", "POST", "DELETE"], "api/reminders.js": ["GET"], "api/log.js": ["GET", "POST"], "api/oauth.js": ["GET", "POST", "OPTIONS"] };
 for (const [file, methods] of Object.entries(routes)) {

@@ -52,6 +52,10 @@ Press **Restrung** on the racket's page each time a racket is restrung. The stri
 
 Under **Reminders** in Settings, turn on notifications for the phone. Every morning (a Vercel cron at 17:00 UTC calls `/api/reminders`) each racket is checked, and you get one notification when it reaches *Restring soon* and one at *Restring now*, per set of strings. On iPhone this needs the app added to the Home Screen (iOS 16.4 or later). The Web Push keys are made on first use and kept in the database (or set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT`). Set `CRON_SECRET` in Vercel so only its cron can start the check. Code: `lib/push.js`, `api/push.js`, `api/reminders.js`, and the `push` handler in `public/sw.js`.
 
+## New look (in progress)
+
+The front end is moving to React and shadcn/ui, one tab at a time, at **`/next/`** on the same site (Today is there now; the other tabs open the current app). See `web/README.md`.
+
 ## Tabs
 
 The app has four tabs along the bottom:

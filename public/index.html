@@ -1056,6 +1056,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
       outbox.forEach(applyLocal); // changes made while this request was out
       if (!Object.keys(rackets).length) rackets[newId()] = blank("My racket");
       if (!rackets[current]) current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
+      if (prefs.tab === "today" && rackets[mainId()]) current = mainId();
       lastSync = Date.now(); lsSet(key("last-sync"), lastSync);
       localSave();
       if (outbox.length) again = true;
@@ -2416,8 +2417,17 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   // ---------- tabs ----------
   const TABS = ["today", "measure", "courts", "gear", "racket", "settings"];
   let prevTab = "today", specsOpen = false, rpSeg = "timeline";
+  // The racket you play with: the one picked as main in the new app, else the one you logged play on
+  // most recently. Today and one-tap logging follow it, so a log can't land on a racket you only looked at.
+  function mainId() {
+    if (prefs.main && rackets[prefs.main]) return prefs.main;
+    let best = null, day = "";
+    for (const [id, r] of Object.entries(rackets)) for (const p of r.plays || []) if (p.d > day) { day = p.d; best = id; }
+    return best || current;
+  }
   function showTab(t, keepScroll) {
     if (!TABS.includes(t)) t = "today";
+    if (t === "today") { const m = mainId(); if (m && m !== current) selectRacket(m); }
     if (t === "settings" && prefs.tab !== "settings") prevTab = prefs.tab || "today";
     prefs.tab = t; savePrefs();
     document.querySelectorAll(".tab").forEach(el => { el.hidden = el.dataset.tab !== t; });
@@ -2502,6 +2512,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
   $("log-rackets").addEventListener("change", e => { selectRacket(e.target.value); updateLogLabel(); });
   if (prefs.tab === "play" || prefs.tab === "account") prefs.tab = "today";
   if (params.get("played")) prefs.tab = "courts"; // from a "How was it?" notification
+  if (TABS.includes(params.get("tab"))) prefs.tab = params.get("tab"); // links from the new app at /next/
   showTab(prefs.tab, true);
   buildPicks();
   $("u-kg").onclick = () => setUnit("kg"); $("u-lb").onclick = () => setUnit("lb");
@@ -2514,6 +2525,7 @@ import { REASON_NAMES, currentJob, minutesBetween, stringStats, onCurrentStrings
     rackets = list;
     if (!Object.keys(rackets).length) { const id = newId(); rackets[id] = blank("My racket"); }
     current = rackets[prefs.racket] ? prefs.racket : Object.keys(rackets)[0];
+    if (prefs.tab === "today" && rackets[mainId()]) current = mainId();
     renderAll();
   }
   function start() {
