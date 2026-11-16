@@ -1,0 +1,116 @@
+/* Tennis Hub on shadcn/ui. The standard shadcn tokens carry the "Courtside" look of the current app:
+   hard-court blue as primary, ball yellow as the accent, Barlow for text, Barlow Condensed for titles.
+   good / warn / bad are Tennis Hub's own status colours (strings, shoes, courts). */
+@import "tailwindcss";
+@import "@fontsource/barlow/400.css";
+@import "@fontsource/barlow/500.css";
+@import "@fontsource/barlow/600.css";
+@import "@fontsource/barlow/700.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 1.25rem;
+  --background: #f3f5f8;
+  --foreground: #142233;
+  --card: #ffffff;
+  --card-foreground: #142233;
+  --popover: #ffffff;
+  --popover-foreground: #142233;
+  --primary: #1d4f7c;
+  --primary-foreground: #ffffff;
+  --secondary: #e3edf7;
+  --secondary-foreground: #1d4f7c;
+  --muted: #eef1f5;
+  --muted-foreground: #5f6f82;
+  --accent: #e3edf7;
+  --accent-foreground: #142233;
+  --destructive: #b3261e;
+  --border: #e1e6ec;
+  --input: #d5dce4;
+  --ring: #1d4f7c;
+  --optic: #c9dc3a;
+  --good: #2e7d4f;
+  --good-soft: #e2f3e8;
+  --warn: #b26a00;
+  --warn-soft: #fdf0db;
+  --bad: #b3261e;
+  --bad-soft: #fbe3e1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #0e1620;
+    --foreground: #e6edf4;
+    --card: #16212d;
+    --card-foreground: #e6edf4;
+    --popover: #16212d;
+    --popover-foreground: #e6edf4;
+    --primary: #6aa8de;
+    --primary-foreground: #0e1620;
+    --secondary: #1c3046;
+    --secondary-foreground: #cfe3f6;
+    --muted: #1b2835;
+    --muted-foreground: #97a8ba;
+    --accent: #1c3046;
+    --accent-foreground: #e6edf4;
+    --destructive: #ef7d74;
+    --border: #283849;
+    --input: #34485c;
+    --ring: #6aa8de;
+    --optic: #d4e64d;
+    --good: #5fc48a;
+    --good-soft: #173527;
+    --warn: #e0a33a;
+    --warn-soft: #3a2b12;
+    --bad: #ef7d74;
+    --bad-soft: #3d1d1b;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --radius-sm: calc(var(--radius) - 8px);
+  --radius-md: calc(var(--radius) - 6px);
+  --radius-lg: calc(var(--radius) - 4px);
+  --radius-xl: var(--radius);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-optic: var(--optic);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+}
+
+@layer base {
+  * { @apply border-border outline-ring/50; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+}

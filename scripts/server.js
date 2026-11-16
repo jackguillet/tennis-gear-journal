@@ -9,7 +9,7 @@ import { setDb, pgliteDb } from "../lib/db.js";
 import { resetSchemaCache } from "../lib/schema.js";
 import { createLocalAuth } from "./local-auth.js";
 
-const types = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".json": "application/json", ".webmanifest": "application/manifest+json", ".png": "image/png", ".svg": "image/svg+xml", ".woff": "font/woff", ".woff2": "font/woff2" };
 const root = new URL("../public/", import.meta.url).pathname;
 
 async function toRequest(req, origin) {
@@ -47,7 +47,8 @@ export async function startServer({ port = 3000, useDatabaseUrl = false } = {}) 
         if (!handler) { res.writeHead(405).end(); return; }
         return send(res, await handler(await toRequest(req, origin)));
       }
-      const path = normalize(join(root, url.pathname === "/" ? "index.html" : url.pathname));
+      // A folder serves its index.html, as on Vercel (the new front end lives at /next/).
+      const path = normalize(join(root, url.pathname.endsWith("/") ? url.pathname + "index.html" : url.pathname));
       if (!path.startsWith(root)) { res.writeHead(403).end(); return; }
       res.writeHead(200, { "content-type": types[extname(path)] || "application/octet-stream" }).end(await readFile(path));
     } catch (e) {
