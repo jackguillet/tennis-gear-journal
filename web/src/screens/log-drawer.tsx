@@ -13,13 +13,13 @@ const chip = "h-11 rounded-full border border-input bg-card px-4 text-[15px] fon
 export interface LogChoice { racketId: string; kind: PlayKind; min: number; d: string }
 
 // "Something else": pick the racket, type of play, how long and the day.
-export function LogDrawer({ open, onOpenChange, racketId, kind, min, onLog }: {
-  open: boolean; onOpenChange: (o: boolean) => void; racketId: string; kind: PlayKind; min: number; onLog: (c: LogChoice) => void
+export function LogDrawer({ open, onOpenChange, racketId, kind, min, day, onLog }: {
+  open: boolean; onOpenChange: (o: boolean) => void; racketId: string; kind: PlayKind; min: number; day?: string; onLog: (c: LogChoice) => void
 }) {
   const rackets = useStore((s) => s.rackets)
   const shoes = useStore((s) => s.shoes)
   const [rid, setRid] = useState(racketId), [k, setK] = useState<PlayKind>(kind), [m, setM] = useState(String(min)), [other, setOther] = useState(""), [d, setD] = useState(today())
-  useEffect(() => { if (open) { setRid(racketId); setK(kind); setM(DURS.some(([v]) => v === min) ? String(min) : "0"); setOther(DURS.some(([v]) => v === min) ? "" : String(min)); setD(today()) } }, [open, racketId, kind, min])
+  useEffect(() => { if (open) { setRid(racketId); setK(kind); setM(DURS.some(([v]) => v === min) ? String(min) : "0"); setOther(DURS.some(([v]) => v === min) ? "" : String(min)); setD(day || today()) } }, [open, racketId, kind, min, day])
   const minutes = m === "0" ? Math.round(Number(other)) : Number(m)
   const ok = rid && minutes >= 5 && minutes <= 600 && d && d <= today()
   const shoe = currentShoe(shoes)

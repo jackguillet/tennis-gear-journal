@@ -14,4 +14,4 @@ it is served at **`/next/`**, beside the current app at `/`, on the same site an
 
 **Pages** are in the URL hash: `#/` Today, `#/gear`, `#/racket/<id>` and `#/racket/<id>/edit` (`src/lib/route.ts`). The tension chart (Recharts, via shadcn's `chart`) loads only when its tab opens.
 
-**Order.** 1 Today (done) · 2 Gear and the racket page (done) · 3 Courts · 4 Settings · 5 Measure (wraps the existing listening code, unchanged) · 6 swap `/next/` to `/` and retire `public/index.html`.
+**Order.** 1 Today (done) · 2 Gear and the racket page (done) · 3 Courts (done) · 4 Settings · 5 Measure (wraps the existing listening code, unchanged) · 6 swap `/next/` to `/` and retire `public/index.html`.

@@ -13,7 +13,8 @@ const built = await access(new URL("../../public/next/index.html", import.meta.u
 const skip = !playwright ? "Playwright isn't installed" : !built ? "run `npm run build` first" : false;
 
 let app, browser, page;
-const day = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString("en-CA");
+// Days on the phone's clock (Seattle), not the test machine's.
+const day = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 const racket = (name, strungOn) => ({ name, head: 98, gauge: 1.25, material: "poly", pattern: "16x19", weight: 305, stringName: "ALU Power", strungKg: 22.7, strungOn, calib: 1 });
 const sync = (ops = []) => page.evaluate(async (ops) => (await fetch("/api/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops }) })).json(), ops);
 

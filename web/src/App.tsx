@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { TabBar } from "@/components/tab-bar"
 import { sync, useStore } from "@/lib/store"
 import { useRoute } from "@/lib/route"
+import { Courts } from "@/screens/courts"
 import { Gear } from "@/screens/gear"
 import { RacketPage } from "@/screens/racket"
 import { Today } from "@/screens/today"
@@ -32,7 +33,7 @@ export function App() {
   return (
     <>
       <main className="mx-auto grid max-w-xl gap-4 px-4 pt-[max(12px,env(safe-area-inset-top))] pb-[calc(96px+env(safe-area-inset-bottom))]">
-        {route.page === "gear" ? <Gear /> : route.page === "racket" ? <RacketPage key={route.id} id={route.id} edit={route.edit} /> : <Today />}
+        {route.page === "gear" ? <Gear /> : route.page === "courts" ? <Courts /> : route.page === "racket" ? <RacketPage key={route.id} id={route.id} edit={route.edit} /> : <Today />}
         <p className="pt-2 text-center text-xs text-muted-foreground">New look, in progress. <a className="font-semibold text-primary" href="/">Back to the current app</a></p>
       </main>
       <TabBar active={route.page === "racket" ? "gear" : route.page} />

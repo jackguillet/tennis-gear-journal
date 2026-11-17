@@ -1,12 +1,13 @@
 // Pages inside /next/, kept in the URL hash so Back and Home Screen reopen where you were:
-// #/ (Today), #/gear, #/racket/<id>, #/racket/<id>/edit.
+// #/ (Today), #/courts, #/gear, #/racket/<id>, #/racket/<id>/edit.
 import { useSyncExternalStore } from "react"
 
-export type Route = { page: "today" } | { page: "gear" } | { page: "racket"; id: string; edit: boolean }
+export type Route = { page: "today" } | { page: "gear" } | { page: "courts" } | { page: "racket"; id: string; edit: boolean }
 
 export function parse(hash: string): Route {
   const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent)
   if (parts[0] === "gear") return { page: "gear" }
+  if (parts[0] === "courts") return { page: "courts" }
   if (parts[0] === "racket" && parts[1]) return { page: "racket", id: parts[1], edit: parts[2] === "edit" }
   return { page: "today" }
 }

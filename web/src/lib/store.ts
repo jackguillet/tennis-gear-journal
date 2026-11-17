@@ -16,8 +16,20 @@ export interface Racket {
   readings: Reading[]; plays: Play[]; jobs: Job[]
 }
 export interface Shoe { id: string; name: string; startedOn: string; retiredOn?: string | null; lifeHours?: number }
-export interface Booking { id: string; start: number; min: number; tz?: string; kind?: PlayKind; court?: string | null; cancelled?: boolean }
-export interface Plan { id: string; dow: number; time: string; min: number; court?: string | null; date?: string | null; paused?: boolean; area?: string }
+export interface Booking {
+  id: string; start: number; min: number; tz?: string; kind?: PlayKind; court?: string | null; location?: string | null
+  note?: string | null; ref?: string | null; racketId?: string | null; playId?: string | null; cancelled?: boolean
+}
+// A court request: every week on `dow`, or once on `date`.
+export interface Plan {
+  id: string; dow: number; date: string | null; skips: string[]; time: string; min: number; area: string; court: string | null
+  kind: PlayKind; note: string | null; backups: string | null; paused: boolean
+}
+// What the GameTime button last saw (no names): a day of the court sheet, the player's waitlist places,
+// how fast courts go, and weekly times booked lately that no request covers.
+export interface SheetDay { date: string; at: number; courts: { c: string; i: number; cells: [number, number, string][] }[] }
+export interface Waitlist { date: string; start: number; minutes: number }
+export interface Suggestion { dow: number; time: string; min: number; court: string | null; area: string; count: number }
 export interface User { id: string; email: string; name?: string | null }
 export interface Profile { level: string | null; style: string | null }
 export interface Prefs { unit?: "kg" | "lb"; racket?: string; main?: string; lastKind?: PlayKind; lastMin?: number; kind?: PlayKind; dur?: number; [k: string]: unknown }
@@ -33,6 +45,11 @@ export interface State {
   shoes: Shoe[]
   bookings: Booking[]
   plans: Plan[]
+  window: { days: number; set: boolean }
+  courtSheet: SheetDay[]
+  waitlist: Waitlist[]
+  courtStats: unknown[]
+  suggestions: Suggestion[]
   outbox: Op[]
   prefs: Prefs
 }
@@ -41,6 +58,8 @@ const lsGet = <T,>(k: string, d: T): T => { try { const v = localStorage.getItem
 const lsSet = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch { /* private mode */ } }
 export const uid = () => (crypto.randomUUID ? crypto.randomUUID() : "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 12))
 
+// An older model kept a fixed opening time; that copy is replaced by the default (7 days before it ends).
+const win = (w: { days?: number; set?: boolean; time?: unknown } | null) => (w && w.days && !w.time ? { days: w.days, set: !!w.set } : { days: 7, set: false })
 function load(): State {
   const user = lsGet<User | null>("sbm-user", null)
   const key = (n: string) => "sbm-" + n + ":" + (user ? user.id : "none")
@@ -48,6 +67,8 @@ function load(): State {
     user, signedIn: null, online: navigator.onLine !== false, lastSync: lsGet(key("last-sync"), 0),
     rackets: lsGet(key("rackets"), {}), profile: lsGet(key("profile"), { level: null, style: null }),
     shoes: lsGet(key("shoes"), []), bookings: lsGet(key("bookings"), []), plans: lsGet(key("plans"), []),
+    window: win(lsGet(key("window"), null)), courtSheet: lsGet(key("sheet"), []), waitlist: lsGet(key("waitlist"), []),
+    courtStats: lsGet(key("stats"), []), suggestions: lsGet(key("suggest"), []),
     outbox: lsGet(key("outbox"), []), prefs: lsGet("sbm-prefs", {}),
   }
 }
@@ -60,6 +81,8 @@ function save() {
   if (!state.user) return
   lsSet(key("rackets"), state.rackets); lsSet(key("outbox"), state.outbox); lsSet(key("profile"), state.profile)
   lsSet(key("shoes"), state.shoes); lsSet(key("bookings"), state.bookings); lsSet(key("plans"), state.plans)
+  lsSet(key("window"), state.window); lsSet(key("sheet"), state.courtSheet); lsSet(key("waitlist"), state.waitlist)
+  lsSet(key("stats"), state.courtStats); lsSet(key("suggest"), state.suggestions)
 }
 export function setPrefs(patch: Partial<Prefs>) { const prefs = { ...lsGet<Prefs>("sbm-prefs", {}), ...patch }; lsSet("sbm-prefs", prefs); set({ prefs }) }
 
@@ -84,6 +107,11 @@ function applyLocal(s: State, op: Op): State {
     case "job.delete": all((r) => ({ ...r, jobs: (r.jobs || []).filter((x) => x.id !== op.id) })); break
     case "shoe.put": return { ...s, shoes: [...s.shoes.filter((x) => x.id !== op.id), { id: op.id as string, ...(op.data as Omit<Shoe, "id">) }] }
     case "shoe.delete": return { ...s, shoes: s.shoes.filter((x) => x.id !== op.id) }
+    case "booking.put": { const { op: _o, ...b } = op; return { ...s, bookings: [...s.bookings.filter((x) => x.id !== b.id), { ...(b as unknown as Booking), playId: null }].sort((a, c) => a.start - c.start) } }
+    case "booking.cancel": return { ...s, bookings: s.bookings.filter((x) => x.id !== op.id) }
+    case "plan.put": { const { op: _o, ...p } = op; return { ...s, plans: [...s.plans.filter((x) => x.id !== p.id), p as unknown as Plan].sort((a, c) => ((a.dow + 6) % 7) - ((c.dow + 6) % 7) || a.time.localeCompare(c.time)) } }
+    case "plan.delete": return { ...s, plans: s.plans.filter((x) => x.id !== op.id) }
+    case "window.put": return { ...s, window: { days: op.days as number, set: true } }
     default: return s
   }
   return { ...s, rackets }
@@ -130,6 +158,8 @@ export async function sync() {
       outbox: state.outbox.filter((o) => !sent.includes(o)),
       rackets: body.rackets || {}, profile: body.profile || state.profile, shoes: body.shoes || state.shoes,
       bookings: body.bookings || state.bookings, plans: body.plans || state.plans,
+      window: body.window ? win(body.window) : state.window, courtSheet: body.courtSheet || state.courtSheet, waitlist: body.waitlist || state.waitlist,
+      courtStats: body.courtStats || state.courtStats, suggestions: body.suggestions || state.suggestions,
     }
     next = next.outbox.reduce(applyLocal, next) // changes made while this request was out
     set(next); lsSet(key("last-sync"), next.lastSync); save()
@@ -248,4 +278,25 @@ export function newPair(name: string, startedOn: string, lifeHours: number, curr
 export function removeShoe(x: Shoe): () => void {
   const del = queue({ op: "shoe.delete", id: x.id })
   return () => undo([del], [{ op: "shoe.put", id: x.id, data: shoeData(x) }])
+}
+
+// ---------- courts ----------
+export const addBooking = (b: Omit<Booking, "id">) => queue({ op: "booking.put", id: uid(), ...b })
+// Takes a booking out of the app and the court calendar (not out of GameTime). Returns an undo.
+export function removeBooking(b: Booking): () => void {
+  const del = queue({ op: "booking.cancel", id: b.id })
+  const { playId: _p, cancelled: _c, ...rest } = b
+  return () => undo([del], [{ op: "booking.put", ...rest }])
+}
+export const putPlan = (p: Plan) => queue({ op: "plan.put", ...p })
+export function removePlan(p: Plan): () => void {
+  const del = queue({ op: "plan.delete", id: p.id })
+  return () => undo([del], [{ op: "plan.put", ...p }])
+}
+export const setWindow = (days: number) => queue({ op: "window.put", days })
+// "Make it weekly": the suggestion becomes a request and leaves the list.
+export function acceptSuggestion(x: Suggestion): Plan {
+  const p: Plan = { id: uid(), dow: x.dow, date: null, skips: [], time: x.time, min: x.min || 75, area: x.area && x.area !== "other" ? x.area : "any", court: x.court || null, kind: "singles", note: null, backups: null, paused: false }
+  putPlan(p); set({ suggestions: state.suggestions.filter((y) => y !== x) }); save()
+  return p
 }

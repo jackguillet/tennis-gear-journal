@@ -22,7 +22,7 @@ import { RestrungDrawer } from "./restrung"
 // The chart library is big, so it loads only when the Tension tab opens.
 const TensionChart = lazy(() => import("./tension-chart").then((m) => ({ default: m.TensionChart })))
 
-const BACK_NAME = { today: "Today", gear: "Gear", racket: "Back" } as const
+const BACK_NAME = { today: "Today", gear: "Gear", courts: "Courts", racket: "Back" } as const
 
 export function RacketPage({ id, edit }: { id: string; edit: boolean }) {
   const rackets = useStore((s) => s.rackets)
