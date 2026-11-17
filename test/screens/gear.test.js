@@ -12,7 +12,8 @@ const built = await access(new URL("../../public/next/index.html", import.meta.u
 const skip = !playwright ? "Playwright isn't installed" : !built ? "run `npm run build` first" : false;
 
 let app, browser, page;
-const day = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString("en-CA");
+// Days on the phone's clock (Seattle), not the test machine's.
+const day = (n) => new Date(Date.now() - n * 864e5).toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" });
 const sync = (ops = []) => page.evaluate(async (ops) => (await fetch("/api/sync", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops }) })).json(), ops);
 // Wait until the phone has sent everything, then read what the server has.
 async function server() {

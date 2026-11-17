@@ -144,7 +144,7 @@ export function Today() {
         </a>
       </div>
 
-      <a href="/?tab=courts" className="block rounded-xl">
+      <a href="#/courts" className="block rounded-xl">
         <Card className="gap-3 px-5 py-4">
           <Eyebrow>Next court</Eyebrow>
           <div className="flex items-center gap-4">
