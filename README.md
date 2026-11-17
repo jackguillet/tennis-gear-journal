@@ -54,7 +54,7 @@ Under **Reminders** in Settings, turn on notifications for the phone. Every morn
 
 ## New look (in progress)
 
-The front end is moving to React and shadcn/ui, one tab at a time, at **`/next/`** on the same site (Today is there now; the other tabs open the current app). See `web/README.md`.
+The front end is moving to React and shadcn/ui, one tab at a time, at **`/next/`** on the same site (Today, Gear and the racket page are there now; Measure, Courts and Settings open the current app). See `web/README.md`.
 
 ## Tabs
 

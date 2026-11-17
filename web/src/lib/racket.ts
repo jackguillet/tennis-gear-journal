@@ -2,7 +2,7 @@
 import { restringAdvice, personalBreak } from "@models/restring.js"
 import { onCurrentStrings } from "@models/stringjobs.js"
 import { readingKg } from "@models/tension.js"
-import { MAT_NAME, hrs, shortDate } from "./format"
+import { MAT_NAME, hrs, shortDate, weight } from "./format"
 import type { Profile, Racket, Reading } from "./store"
 
 export type Tone = "good" | "warn" | "bad" | "none"
@@ -35,3 +35,7 @@ export function baseline(r: Racket): Reading | null {
   const since = Math.max(r.strungOn ? Date.parse(r.strungOn + "T00:00:00") : 0, r.calibAt || 0)
   return r.readings.filter((x) => x.t >= since).sort((a, b) => a.t - b.t)[0] || null
 }
+
+// "ALU Power · 1.25 · 50.0 lb"
+export const stringDesc = (x: { stringName?: string | null; material?: string; gauge?: number; strungKg?: number | null }, unit: "kg" | "lb") =>
+  [x.stringName || MAT_NAME[x.material || ""] || x.material, x.gauge ? Number(x.gauge).toFixed(2) : "", x.strungKg ? `${weight(x.strungKg, unit)} ${unit}` : ""].filter(Boolean).join(" · ")
